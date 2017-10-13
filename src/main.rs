@@ -115,9 +115,10 @@ fn reverse_test() {
 
 #[test]
 fn sha256d_test() {
-    let o = sha256d(Vec::from("test"));
+    let genesis = Vec::from_hex("0100000081cd02ab7e569e8bcd9317e2fe99f2de44d49ab2b8851ba4a308000000000000e320b6c2fffc8d750423db8b1eb942ae710e951ed797f7affc8892b0f1fc122bc7f5d74df2b9441a42a14695").unwrap();
+    let o = sha256d(genesis);
     println!("{:?}", o);
-    assert_eq!(o.as_slice().to_hex(), "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
+    assert_eq!(o.as_slice().to_hex(), "1dbd981fe6985776b644b173a4d0385ddc1aa2a829688d1e0000000000000000");
 }
 
 #[test]
