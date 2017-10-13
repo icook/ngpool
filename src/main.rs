@@ -11,6 +11,18 @@ use crypto::digest::Digest;
 use crypto::sha2::Sha256;
 
 
+struct Job {
+    id: String,
+    hash_prev: String,
+    coinbase1: String,
+    coinbase2: String,
+    merkle_branches: Vec<String>,
+    block_version: String,
+    n_bits: String,
+    n_time: String,
+    flush: bool
+}
+
 struct RpcConnection {
     id: i32,
     url: String,
@@ -95,6 +107,20 @@ fn merklebranch(input: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     branch
 }
 
+fn gbt_to_job(input: serde_json::Value) -> Job {
+    Job {
+        id: "".to_string(),
+        hash_prev: "".to_string(),
+        coinbase1: "".to_string(),
+        coinbase2: "".to_string(),
+        merkle_branches: ["".to_string()].to_vec(),
+        block_version: "".to_string(),
+        n_bits: "".to_string(),
+        n_time: "".to_string(),
+        flush: true
+    }
+}
+
 fn main() {
     //let mut con = RpcConnection::new("http://127.0.0.1:20001", "admin1", "123");
     //let result = con.cmd("getblocktemplate", ()).unwrap();
@@ -115,6 +141,11 @@ fn sha256d_test() {
     let o = sha256d(genesis);
     println!("{:?}", o);
     assert_eq!(o.as_slice().to_hex(), "1dbd981fe6985776b644b173a4d0385ddc1aa2a829688d1e0000000000000000");
+}
+
+#[test]
+fn getblocktemplate_assemble() {
+
 }
 
 #[test]
