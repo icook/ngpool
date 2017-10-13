@@ -66,8 +66,7 @@ fn reverse_8byte(input: &str) -> Vec<u8> {
 }
 
 fn merklebranch(input: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
-    let mut hasher = crypto::sha2::Sha256::new();
-    let empty_vec: Vec<u8> = vec![0];
+    let empty_vec: Vec<u8> = vec![];
 
     let mut branch: Vec<Vec<u8>> = vec![];
     let mut walker = input.clone();
@@ -87,13 +86,10 @@ fn merklebranch(input: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
                 } else {
                     buf.append(&mut slc[1].clone());
                 }
-                //hasher.input(buf.as_slice());
-                //let res = hasher.result();
-                //hasher.input(res.as_slice());
-                //new.push(hasher.result().to_vec());
+                let res = sha256d(buf);
+                new.push(res);
             }
         }
-        println!("arr {:?}; len {}", new, new.len());
         walker = new;
     }
     branch
