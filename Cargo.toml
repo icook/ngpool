@@ -5,6 +5,8 @@ version = "0.1.0"
 
 [dependencies]
 base64 = "0.7.0"
+bitcoin = "0.10.1"
+byteorder = "1.1.0"
 hex = "0.2.0"
 hyper = "0.11.6"
 reqwest = "0.8.0"

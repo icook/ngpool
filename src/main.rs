@@ -4,11 +4,16 @@ extern crate hyper;
 extern crate base64;
 extern crate hex;
 extern crate crypto;
+extern crate bitcoin;
+extern crate byteorder;
 
+use std::iter;
 use reqwest::header::{Headers, UserAgent, Authorization, ContentType};
 use hex::{FromHex, ToHex};
 use crypto::digest::Digest;
 use crypto::sha2::Sha256;
+use bitcoin::util::base58::ToBase58;
+use byteorder::{LittleEndian, WriteBytesExt};
 
 
 struct Job {
@@ -57,7 +62,8 @@ impl RpcConnection {
                                    headers(self.headers.clone()).
                                    send().unwrap();
         self.id += 1;
-        return resp.json();
+        let res: serde_json::Value = resp.json()?;
+        Ok(res["result"].clone())
     }
 }
 
@@ -107,7 +113,72 @@ fn merklebranch(input: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
     branch
 }
 
-fn gbt_to_job(input: serde_json::Value) -> Job {
+fn varlen_encode(val: u64) -> Vec<u8> {
+    let mut wtr = vec![];
+    match val {
+        0...0xFC             => {
+            wtr.write_u8(val as u8).unwrap();
+        }
+        0xFD...0xFFFF        => {
+            wtr.write_u8(0xFD).unwrap();
+            wtr.write_u16::<LittleEndian>(val as u16).unwrap();
+        }
+        0x10000...0xFFFFFFFF => {
+            wtr.write_u8(0xFE).unwrap();
+            wtr.write_u32::<LittleEndian>(val as u32).unwrap();
+        }
+        _                    => {
+            wtr.write_u8(0xFF).unwrap();
+            wtr.write_u64::<LittleEndian>(val).unwrap();
+        }
+    }
+    wtr
+}
+
+fn gbt_to_job(address: &str, extranonce_sz: u8, input: serde_json::Value) -> Job {
+    let mut coinbase1: Vec<u8> = vec![];
+    let mut coinbase2: Vec<u8> = vec![];
+    let address = address.as_bytes().to_vec().to_base58();
+    // Transaction version number
+    coinbase1.append(&mut Vec::from_hex("00000001").unwrap());
+    // TXIN Count
+    coinbase1.append(&mut varlen_encode(1));
+
+     // Coinbase input
+     // ////#####################
+     // Previous input. Coinbase is null, special input
+     coinbase1.append(&mut [0 as u8; 32].to_vec());
+     // Previous input index in transaction. All 1s, special again
+     coinbase1.append(&mut [0xFF as u8; 4].to_vec());
+ 
+     // Script
+     // --------------------
+     // Length of script
+     coinbase1.append(&mut varlen_encode(4 + extranonce_sz as u64));
+     // Height of block, required by BIP34. 4 byte fixed width
+     let height = input["height"].as_u64().expect("No height from server!");
+     coinbase1.write_u64::<LittleEndian>(height).unwrap();
+     // --------------------
+     // #######################
+     // TXOut Count
+    coinbase1.append(&mut varlen_encode(1));
+ 
+ 
+     // Output
+     // #######################
+     // Output in satoshis, 8 bytes
+     coinbase2.append(coinbaseVal.toHex(16).hexToBytes
+// 
+//     // Script length
+//     // ----------------------------
+//     let script = "\x76\xa9\x14" & address & "\x88\xac"
+//     coinbase2.append(script.len.varlenEncode
+//     coinbase2.append(script
+//     // ----------------------------
+//     // #######################
+// 
+//     // Sequence number
+//     coinbase2.append("\x00".repeat(4)
     Job {
         id: "".to_string(),
         hash_prev: "".to_string(),
@@ -122,10 +193,10 @@ fn gbt_to_job(input: serde_json::Value) -> Job {
 }
 
 fn main() {
-    //let mut con = RpcConnection::new("http://127.0.0.1:20001", "admin1", "123");
-    //let result = con.cmd("getblocktemplate", ()).unwrap();
+    let mut con = RpcConnection::new("http://127.0.0.1:20001", "admin1", "123");
+    let result = con.cmd("getblocktemplate", ()).unwrap();
 	
-    //println!("{:?}", result);
+    println!("{:?}", result.to_string());
 }
 
 #[test]
@@ -145,7 +216,9 @@ fn sha256d_test() {
 
 #[test]
 fn getblocktemplate_assemble() {
-
+    let input = json!({"bits":"207fffff","capabilities":["proposal"],"coinbaseaux":{"flags":""},"coinbasevalue":5000000000,"curtime":1507944775,"height":66,"longpollid":"95059ba8a586118eb41196fc62170ca3818e16cdbcab9f16e821274099dccae83","mintime":1507244523,"mutable":["time","transactions","prevblock"],"noncerange":"00000000ffffffff","previousblockhash":"95059ba8a586118eb41196fc62170ca3818e16cdbcab9f16e821274099dccae8","rules":[],"sigoplimit":20000,"sizelimit":1000000,"target":"7fffff0000000000000000000000000000000000000000000000000000000000","transactions":[],"vbavailable":{},"vbrequired":0,"version":536870912});
+    let output = gbt_to_job("miEandrT5UAoZHZU6wAh9bB99dETDyrNGk", input);
+    assert_eq!(1,2);
 }
 
 #[test]
