@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/coreos/etcd/client"
@@ -109,6 +110,7 @@ func (c *CoinBuddy) RunEventListener() {
 		listener := make(chan interface{})
 		c.broadcast.Register(listener)
 		defer func() {
+			log.Debug("Closing client channel")
 			c.broadcast.Unregister(listener)
 			close(listener)
 		}()
@@ -121,7 +123,9 @@ func (c *CoinBuddy) RunEventListener() {
 			c.lastBlockMtx.RUnlock()
 		}()
 		ctx.Stream(func(w io.Writer) bool {
-			ctx.SSEvent("block", <-listener)
+			in := <-listener
+			out := base64.StdEncoding.EncodeToString(in.(json.RawMessage))
+			ctx.SSEvent("block", out)
 			log.Debug("Sent block update to listener")
 			return true
 		})
