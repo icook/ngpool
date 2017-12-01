@@ -104,6 +104,7 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 
 func (c *CoinBuddy) RunEventListener() {
 	c.eventListener = gin.Default()
+	gin.SetMode("release")
 	c.eventListener.GET("/blocks", func(ctx *gin.Context) {
 		listener := make(chan interface{})
 		c.broadcast.Register(listener)
