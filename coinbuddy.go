@@ -112,15 +112,19 @@ func (c *CoinBuddy) RunEventListener() {
 			c.broadcast.Unregister(listener)
 			close(listener)
 		}()
+		// Send the latest block as soon as they connect
+		go func() {
+			c.lastBlockMtx.RLock()
+			if c.lastBlock != nil {
+				listener <- c.lastBlock
+			}
+			c.lastBlockMtx.RUnlock()
+		}()
 		ctx.Stream(func(w io.Writer) bool {
 			ctx.SSEvent("block", <-listener)
+			log.Debug("Sent block update to listener")
 			return true
 		})
-		c.lastBlockMtx.RLock()
-		if c.lastBlock != nil {
-			listener <- c.lastBlock
-		}
-		c.lastBlockMtx.RUnlock()
 	})
 
 	go c.eventListener.Run(c.config.GetString("EventListenerBind"))
