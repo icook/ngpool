@@ -55,39 +55,71 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 	}
 	c.client = client
 
-	// Try to stop a coinserver from prvious run
-	err = c.kill()
-	if err == nil {
-		log.Info("Killed coinserver that was still running")
-	} else {
-		log.Debug("Failed to kill previous run of coinserver: ", err)
-	}
+	// TODO: This will put warnings into log on startup...
+	log.Info("Trying to stop coinserver from previous run")
+	c.Stop()
 
 	return c
 }
 
 func (c *Coinserver) Stop() {
-	err := c.kill()
+	proc, err := c.getProcess()
 	if err != nil {
-		log.Warn("Unable to stop coinserver: ", err)
+		log.WithError(err).Warn("Failed to lookup pid for process from pidfile")
+		return
+	}
+	err = c.signalExit(proc, time.Second*30)
+	if err != nil {
+		log.WithError(err).Warn("Failed graceful shutdown")
+	} else {
+		return
+	}
+	err = c.kill(proc)
+	if err != nil {
+		log.WithError(err).Warn("Unable to stop coinserver")
 		return
 	}
 }
 
-func (c *Coinserver) kill() error {
+func (c *Coinserver) getProcess() (*os.Process, error) {
 	pidStr, err := ioutil.ReadFile(c.Config["pid"])
 	if err != nil {
-		return errors.Wrap(err, "Can't load coinserver pidfile")
+		return nil, errors.Wrap(err, "Can't load coinserver pidfile")
 	}
 	pid, err := strconv.ParseInt(strings.TrimSpace(string(pidStr)), 10, 32)
 	if err != nil {
-		return errors.Wrap(err, "Can't parse coinserver pidfile")
+		return nil, errors.Wrap(err, "Can't parse coinserver pidfile")
 	}
 	proc, err := os.FindProcess(int(pid))
 	if err != nil {
-		return errors.Wrap(err, "No process on stop, exiting")
+		return nil, errors.Wrap(err, "Failed to find process from pidfile")
 	}
-	err = proc.Kill()
+	return proc, nil
+}
+
+func (c *Coinserver) signalExit(proc *os.Process, timeout time.Duration) error {
+	startShutdown := time.Now()
+	err := proc.Signal(os.Interrupt)
+	if err != nil {
+		return errors.Wrap(err, "Failed to signal exit to coinserver")
+	}
+	log.WithField("pid", proc.Pid).Info("SIGINT to coinserver")
+	done := make(chan interface{}, 1)
+	go func() {
+		proc.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		log.WithField("time", time.Now().Sub(startShutdown)).Info("Coinserver shutdown complete")
+	case <-time.After(timeout):
+		return errors.Errorf("SIGINT timeout %v reached", timeout)
+	}
+	return nil
+}
+
+func (c *Coinserver) kill(proc *os.Process) error {
+	err := proc.Kill()
 	if err != nil {
 		return errors.Wrap(err, "Error exiting process")
 	}
@@ -95,7 +127,7 @@ func (c *Coinserver) kill() error {
 	// the process exits before wait call runs then we get an error that is
 	// annoying to test for, so we just don't worry about it
 	proc.Wait()
-	log.Info("Killed (hopefully) pid ", pid)
+	log.Info("Killed (hopefully) pid ", proc.Pid)
 	return nil
 }
 
