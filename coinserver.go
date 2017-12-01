@@ -44,7 +44,10 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 	// TODO: This will put warnings into log on startup...
 	// Stop a previous run. Might happen from segfaults, etc
 	log.Info("Trying to stop coinserver from previous run")
-	c.Stop()
+	if c.Stop() {
+		// Wait for cleanup from closing coinserver
+		time.Sleep(time.Second * 5)
+	}
 
 	// Start server
 	log.Debug("Starting coinserver with config ", args)
@@ -66,23 +69,24 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 	return c
 }
 
-func (c *Coinserver) Stop() {
+func (c *Coinserver) Stop() bool {
 	proc, err := c.getProcess()
 	if err != nil {
 		log.WithError(err).Warn("Failed to lookup pid for process from pidfile")
-		return
+		return false
 	}
 	err = c.signalExit(proc, time.Second*30)
 	if err != nil {
 		log.WithError(err).Warn("Failed graceful shutdown")
 	} else {
-		return
+		return true
 	}
 	err = c.kill(proc)
 	if err != nil {
 		log.WithError(err).Warn("Unable to stop coinserver")
-		return
+		return false
 	}
+	return true
 }
 
 func (c *Coinserver) getProcess() (*os.Process, error) {
