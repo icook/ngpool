@@ -24,11 +24,6 @@ type Coinserver struct {
 func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinserver {
 	// Set some defaults
 	config := map[string]string{
-		"rpcuser":     "admin1",
-		"rpcpassword": "123",
-		"port":        "19000",
-		"rpcport":     "19001",
-		"server":      "1",
 		"blocknotify": blocknotify,
 	}
 	for key, val := range overrideConfig {

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/gin-gonic/gin"
@@ -32,13 +34,21 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 	config := viper.New()
 
 	config.SetDefault("LogLevel", "info")
-	config.SetDefault("BlockListenerBind", "localhost:3000")
-	config.SetDefault("EventListenerBind", "localhost:4000")
+	config.SetDefault("BlockListenerBind", "127.0.0.1:3000")
+	config.SetDefault("EventListenerBind", "127.0.0.1:4000")
 	config.SetDefault("EtcdEndpoint", "http://127.0.0.1:4001")
+	config.SetDefault("CurrencyCode", "BTC")
+	config.SetDefault("CoinserverBinary", "bitcoind")
+	config.SetDefault("NodeConfig.rpcuser", "admin1")
+	config.SetDefault("NodeConfig.rpcpassword", "123")
+	config.SetDefault("NodeConfig.port", "19000")
+	config.SetDefault("NodeConfig.rpcport", "19001")
+	config.SetDefault("NodeConfig.server", "1")
 
-	// Load from Env
+	// Load from Env so we can access etcd
 	config.AutomaticEnv()
 
+	// Load from etcd if the user specifies a serviceID, otherwise try config.yaml
 	serviceID := config.GetString("ServiceID")
 	if serviceID != "" {
 		log.Infof("Loaded service ID %s, pulling config from etcd", serviceID)
@@ -55,9 +65,13 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 		config.SetConfigType("yaml")
 		err := config.ReadInConfig()
 		if err != nil {
-			log.Fatalf("error %v on parsing configuration file", err)
+			log.WithError(err).Fatalf("failed to parse configuration file '%s.yaml'", configFile)
 		}
 	}
+
+	// Load from Env, which will overwrite everything else
+	config.AutomaticEnv()
+
 	cb := &CoinBuddy{
 		config:       config,
 		broadcast:    broadcast.NewBroadcaster(10),
@@ -69,6 +83,7 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 	if err != nil {
 		log.WithError(err).Fatal("Unable to parse log level %s", levelConfig)
 	}
+	log.Info("Set log level to ", level)
 	log.SetLevel(level)
 
 	cfg := client.Config{
@@ -107,8 +122,8 @@ func (c *CoinBuddy) RunEventListener() {
 	})
 
 	go c.eventListener.Run(c.config.GetString("EventListenerBind"))
-	log.Infof("Listening for subscriptions on http://%s/blocks",
-		c.config.GetString("EventListenerBind"))
+	endpoint := fmt.Sprintf("http://%s/blocks", c.config.GetString("EventListenerBind"))
+	log.WithField("endpoint", endpoint).Infof("Listening for SSE subscriptions")
 }
 
 func (c *CoinBuddy) RunBlockListener() {
@@ -149,8 +164,8 @@ func (c *CoinBuddy) RunBlockListener() {
 			log.Infof("Httpserver: ListenAndServe() error: %s", err)
 		}
 	}()
-	log.Infof("Listening for new block notifications on http://%s/notif",
-		c.config.GetString("BlockListenerBind"))
+	endpoint := fmt.Sprintf("http://%s/notif", c.config.GetString("BlockListenerBind"))
+	log.WithField("endpoint", endpoint).Info("Listening for new block notifications")
 
 	// Loop and try to get an initial block template every few seconds
 	go func() {
@@ -181,6 +196,39 @@ func (c *CoinBuddy) RunCoinserver() error {
 }
 
 func (c *CoinBuddy) RunEtcdHealth() error {
+	// conn, err := net.Dial("udp", "8.8.8.8:80")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer conn.Close()
+
+	// localAddr := conn.LocalAddr().(*net.UDPAddr)
+	// localIP := localAddr.IP
+	// log.WithField("ip", localIP).Info("Detected routable IP address")
+
+	go func() {
+		for {
+			time.Sleep(time.Second * 10)
+			status, err := json.Marshal(map[string]interface{}{
+				"currency": c.config.GetString("CurrencyCode"),
+				"endpoint": fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),
+			})
+			if err != nil {
+				log.WithError(err).Warn("Failed serialization of status update")
+				continue
+			}
+			opt := &client.SetOptions{
+				TTL: time.Second * 15,
+			}
+			serviceID := c.config.GetString("ServiceID")
+			_, err = c.etcdKeys.Set(
+				context.Background(), "/services/coinservers/"+serviceID, string(status), opt)
+			if err != nil {
+				log.WithError(err).Warn("Failed to update etcd status entry")
+				continue
+			}
+		}
+	}()
 	return nil
 }
 
