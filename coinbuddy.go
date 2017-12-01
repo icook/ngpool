@@ -38,6 +38,7 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 	config.SetDefault("EventListenerBind", "127.0.0.1:4000")
 	config.SetDefault("EtcdEndpoint", "http://127.0.0.1:4001")
 	config.SetDefault("CurrencyCode", "BTC")
+	config.SetDefault("HashingAlgo", "sha256d")
 	config.SetDefault("CoinserverBinary", "bitcoind")
 	config.SetDefault("NodeConfig.rpcuser", "admin1")
 	config.SetDefault("NodeConfig.rpcpassword", "123")
@@ -210,6 +211,7 @@ func (c *CoinBuddy) RunEtcdHealth() error {
 		for {
 			time.Sleep(time.Second * 10)
 			status, err := json.Marshal(map[string]interface{}{
+				"algo":     c.config.GetString("HashingAlgo"),
 				"currency": c.config.GetString("CurrencyCode"),
 				"endpoint": fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),
 			})
