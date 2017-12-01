@@ -1,7 +1,0 @@
-blocklistenerbind: localhost:3000
-etcdendpoint: localhost:4001
-eventlistenerbind: localhost:4000
-loglevel: info
-nodeconfig:
-  datadir: ~/.litecoin/
-  testnet: "1"
