@@ -209,23 +209,35 @@ func (c *CoinBuddy) RunEtcdHealth() error {
 	// log.WithField("ip", localIP).Info("Detected routable IP address")
 
 	go func() {
+		var (
+			lastStatus string
+			serviceID  string = c.config.GetString("ServiceID")
+		)
 		for {
 			time.Sleep(time.Second * 10)
-			status, err := json.Marshal(map[string]interface{}{
+			statusRaw, err := json.Marshal(map[string]interface{}{
 				"algo":     c.config.GetString("HashingAlgo"),
 				"currency": c.config.GetString("CurrencyCode"),
 				"endpoint": fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),
 			})
+			status := string(statusRaw)
 			if err != nil {
-				log.WithError(err).Warn("Failed serialization of status update")
+				log.WithError(err).Error("Failed serialization of status update")
 				continue
 			}
 			opt := &client.SetOptions{
 				TTL: time.Second * 15,
 			}
-			serviceID := c.config.GetString("ServiceID")
+			// Don't update if no new information, just refresh TTL
+			if status == lastStatus {
+				opt.Refresh = true
+				opt.PrevExist = client.PrevExist
+				status = ""
+			} else {
+				lastStatus = status
+			}
 			_, err = c.etcdKeys.Set(
-				context.Background(), "/services/coinservers/"+serviceID, string(status), opt)
+				context.Background(), "/services/coinservers/"+serviceID, status, opt)
 			if err != nil {
 				log.WithError(err).Warn("Failed to update etcd status entry")
 				continue
