@@ -36,11 +36,19 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 	for key, val := range config {
 		args = append(args, "-"+key+"="+val)
 	}
-	log.Debug("Starting coinserver with config ", args)
+
 	c := &Coinserver{
-		Config:  config,
-		command: exec.Command("litecoind", args...),
+		Config: config,
 	}
+
+	// TODO: This will put warnings into log on startup...
+	// Stop a previous run. Might happen from segfaults, etc
+	log.Info("Trying to stop coinserver from previous run")
+	c.Stop()
+
+	// Start server
+	log.Debug("Starting coinserver with config ", args)
+	c.command = exec.Command("litecoind", args...)
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         fmt.Sprintf("localhost:%v", config["rpcport"]),
@@ -54,10 +62,6 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 		log.WithError(err).Fatal("Failed to initialize rpcclient")
 	}
 	c.client = client
-
-	// TODO: This will put warnings into log on startup...
-	log.Info("Trying to stop coinserver from previous run")
-	c.Stop()
 
 	return c
 }
