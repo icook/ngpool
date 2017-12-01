@@ -3,9 +3,15 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/armon/consul-api"
+  packages = ["."]
+  revision = "dcfedd50ed5334f96adee43fc88518a4f095e15c"
+
+[[projects]]
+  branch = "master"
   name = "github.com/btcsuite/btcd"
   packages = ["btcec","btcjson","chaincfg","chaincfg/chainhash","wire"]
-  revision = "fb43a179cb37713cb19f93c9b62d436385edbc87"
+  revision = "2e60448ffcc6bf78332d1fe590260095f554dd78"
 
 [[projects]]
   branch = "master"
@@ -30,6 +36,18 @@
   name = "github.com/btcsuite/websocket"
   packages = ["."]
   revision = "31079b6807923eb23992c421b114992b95131b55"
+
+[[projects]]
+  name = "github.com/coreos/etcd"
+  packages = ["client","pkg/pathutil","pkg/srv","pkg/types","version"]
+  revision = "694728c496e22dfa5719c78ff23cc982e15bcb2f"
+  version = "v3.2.10"
+
+[[projects]]
+  name = "github.com/coreos/go-semver"
+  packages = ["semver"]
+  revision = "8ab6407b697782a06568d4b7f1db25550ec2e4c6"
+  version = "v0.2.0"
 
 [[projects]]
   branch = "master"
@@ -71,7 +89,19 @@
   branch = "master"
   name = "github.com/icook/btcd"
   packages = ["btcjson","rpcclient"]
-  revision = "fb43a179cb37713cb19f93c9b62d436385edbc87"
+  revision = "dcd8efd4e2af1e06c930a4153d8ba2b14e368191"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/icook/portabledec"
+  packages = ["."]
+  revision = "67348c30f9a6255d33000e22408ee3734b1e1e48"
+
+[[projects]]
+  name = "github.com/inconshreveable/mousetrap"
+  packages = ["."]
+  revision = "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
+  version = "v1.0"
 
 [[projects]]
   name = "github.com/magiconair/properties"
@@ -110,6 +140,12 @@
   version = "v0.8.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/shopspring/decimal"
+  packages = ["."]
+  revision = "9ca7f51822d222ae4e246f070f9aad863599bd1a"
+
+[[projects]]
   name = "github.com/sirupsen/logrus"
   packages = ["."]
   revision = "f006c2ac4710855cf0f916dd6b77acf6b048dc6e"
@@ -128,6 +164,12 @@
   version = "v1.1.0"
 
 [[projects]]
+  name = "github.com/spf13/cobra"
+  packages = ["."]
+  revision = "7b2c5ac9fc04fc5efafb60700713d4fa609b777b"
+  version = "v0.0.1"
+
+[[projects]]
   branch = "master"
   name = "github.com/spf13/jwalterweatherman"
   packages = ["."]
@@ -141,7 +183,7 @@
 
 [[projects]]
   name = "github.com/spf13/viper"
-  packages = ["."]
+  packages = [".","remote"]
   revision = "25b30aa063fc18e48662b86996252eabdcf2f0c7"
   version = "v1.0.0"
 
@@ -153,9 +195,21 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/xordataexchange/crypt"
+  packages = ["backend","backend/consul","backend/etcd","config","encoding/secconf"]
+  revision = "b2862e3d0a775f18c7cfe02273500ae307b61218"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/crypto"
-  packages = ["ripemd160","ssh/terminal"]
-  revision = "9419663f5a44be8b34ca85f08abc5fe1be11f8a3"
+  packages = ["cast5","openpgp","openpgp/armor","openpgp/elgamal","openpgp/errors","openpgp/packet","openpgp/s2k","ripemd160","ssh/terminal"]
+  revision = "94eea52f7b742c7cbe0b03b22f0c4c8631ece122"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/net"
+  packages = ["context"]
+  revision = "a8b9294777976932365dabb6640cf1468d95c70f"
 
 [[projects]]
   branch = "master"
@@ -184,6 +238,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b0d2fffc9d914cbb60960345aebaf45cc7cfa806ff4ca83fedcf6df798fe7122"
+  inputs-digest = "d89d76f4f6b7d0f1d800e1669cb4d8f13d917b9feb524b01f460b91de6530c84"
   solver-name = "gps-cdcl"
   solver-version = 1

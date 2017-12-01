@@ -2,145 +2,25 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/btcd/btcjson"
-	"github.com/icook/btcd/rpcclient"
-	"github.com/mitchellh/go-homedir"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	_ "github.com/spf13/viper/remote"
 	"io"
-	"io/ioutil"
 	"net/http"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
-
-type Coinserver struct {
-	Config  map[string]string
-	client  *rpcclient.Client
-	command *exec.Cmd
-}
-
-func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinserver {
-	// Set some defaults
-	config := map[string]string{
-		"rpcuser":     "admin1",
-		"rpcpassword": "123",
-		"port":        "19000",
-		"rpcport":     "19001",
-		"server":      "1",
-		"blocknotify": blocknotify,
-	}
-	for key, val := range overrideConfig {
-		config[key] = val
-	}
-	dir, _ := homedir.Expand(config["datadir"])
-	config["datadir"] = dir
-	config["pid"] = path.Join(config["datadir"], "coinserver.pid")
-	args := []string{}
-	for key, val := range config {
-		args = append(args, "-"+key+"="+val)
-	}
-	log.Debug("Starting coinserver with config ", args)
-	c := &Coinserver{
-		Config:  config,
-		command: exec.Command("litecoind", args...),
-	}
-
-	connCfg := &rpcclient.ConnConfig{
-		Host:         fmt.Sprintf("localhost:%v", config["rpcport"]),
-		User:         config["rpcuser"],
-		Pass:         config["rpcpassword"],
-		HTTPPostMode: true, // Bitcoin core only supports HTTP POST mode
-		DisableTLS:   true, // Bitcoin core does not provide TLS by default
-	}
-	client, err := rpcclient.New(connCfg, nil)
-	if err != nil {
-		log.WithError(err).Fatal("Failed to initialize rpcclient")
-	}
-	c.client = client
-
-	// Try to stop a coinserver from prvious run
-	err = c.kill()
-	if err == nil {
-		log.Info("Killed coinserver that was still running")
-	} else {
-		log.Debug("Failed to kill previous run of coinserver: ", err)
-	}
-
-	return c
-}
-
-func (c *Coinserver) Stop() {
-	err := c.kill()
-	if err != nil {
-		log.Warn("Unable to stop coinserver: ", err)
-		return
-	}
-}
-
-func (c *Coinserver) kill() error {
-	pidStr, err := ioutil.ReadFile(c.Config["pid"])
-	if err != nil {
-		return errors.Wrap(err, "Can't load coinserver pidfile")
-	}
-	pid, err := strconv.ParseInt(strings.TrimSpace(string(pidStr)), 10, 32)
-	if err != nil {
-		return errors.Wrap(err, "Can't parse coinserver pidfile")
-	}
-	proc, err := os.FindProcess(int(pid))
-	if err != nil {
-		return errors.Wrap(err, "No process on stop, exiting")
-	}
-	err = proc.Kill()
-	if err != nil {
-		return errors.Wrap(err, "Error exiting process")
-	}
-	time.Sleep(1 * time.Second)
-	// There's an annoying race condition here if we check the err value. If
-	// the process exits before wait call runs then we get an error that is
-	// annoying to test for, so we just don't worry about it
-	proc.Wait()
-	log.Info("Killed (hopefully) pid ", pid)
-	return nil
-}
-
-func (c *Coinserver) Run() error {
-	return c.command.Run()
-}
-
-func (c *Coinserver) WaitUntilUp() error {
-	var err error
-	i := 0
-	tot := 900
-	for ; i < tot; i++ {
-		ret, err := c.client.GetInfo()
-		if err == nil {
-			log.Infof("Coinserver up after %v", i/10)
-			log.Infof("\t-> getinfo=%+v", ret)
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-		if i%50 == 0 && i > 0 {
-			log.Infof("Coinserver not up yet after %d / %d seconds", i/10, tot/10)
-		}
-	}
-	return err
-}
 
 type CoinBuddy struct {
 	config        *viper.Viper
 	cs            *Coinserver
+	etcd          client.Client
+	etcdKeys      client.KeysAPI
 	blockListener *http.Server
 	eventListener *gin.Engine
 	lastBlock     json.RawMessage
@@ -149,28 +29,61 @@ type CoinBuddy struct {
 }
 
 func NewCoinBuddy(configFile string) *CoinBuddy {
-	log.SetFormatter(&log.TextFormatter{ForceColors: true})
-	log.SetLevel(log.DebugLevel)
-
 	config := viper.New()
-	config.SetEnvPrefix("relay")
-	config.AutomaticEnv()
-	config.AddConfigPath(".")
-	config.SetConfigType("yaml")
-	config.SetConfigName(configFile)
-	// The port we listen for notification from coinserver
+
+	config.SetDefault("LogLevel", "info")
 	config.SetDefault("BlockListenerBind", "localhost:3000")
-	// The port we send out SSE events for new blocks
 	config.SetDefault("EventListenerBind", "localhost:4000")
-	err := config.ReadInConfig()
-	if err != nil {
-		log.Fatalf("error %v on parsing configuration file", err)
+	config.SetDefault("EtcdEndpoint", "http://127.0.0.1:4001")
+
+	// Load from Env
+	config.AutomaticEnv()
+
+	serviceID := config.GetString("ServiceID")
+	if serviceID != "" {
+		log.Infof("Loaded service ID %s, pulling config from etcd", serviceID)
+		config.AddRemoteProvider("etcd", config.GetString("EtcdEndpoint"), "/config/"+serviceID)
+		config.SetConfigType("yaml")
+		err := config.ReadRemoteConfig()
+		if err != nil {
+			log.WithError(err).Warn("Unable to load from etcd")
+		}
+	} else {
+		// Load from file
+		config.SetConfigName(configFile)
+		config.AddConfigPath(".")
+		config.SetConfigType("yaml")
+		err := config.ReadInConfig()
+		if err != nil {
+			log.Fatalf("error %v on parsing configuration file", err)
+		}
 	}
-	return &CoinBuddy{
+	cb := &CoinBuddy{
 		config:       config,
 		broadcast:    broadcast.NewBroadcaster(10),
 		lastBlockMtx: sync.RWMutex{},
 	}
+
+	levelConfig := config.GetString("LogLevel")
+	level, err := log.ParseLevel(levelConfig)
+	if err != nil {
+		log.WithError(err).Fatal("Unable to parse log level %s", levelConfig)
+	}
+	log.SetLevel(level)
+
+	cfg := client.Config{
+		Endpoints: []string{config.GetString("EtcdEndpoint")},
+		Transport: client.DefaultTransport,
+		// set timeout per request to fail fast when the target endpoint is unavailable
+		HeaderTimeoutPerRequest: time.Second,
+	}
+	cb.etcd, err = client.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cb.etcdKeys = client.NewKeysAPI(cb.etcd)
+
+	return cb
 }
 
 func (c *CoinBuddy) RunEventListener() {
@@ -252,7 +165,7 @@ func (c *CoinBuddy) RunBlockListener() {
 	}()
 }
 
-func (c *CoinBuddy) RunNode() error {
+func (c *CoinBuddy) RunCoinserver() error {
 	// Parse the config to format for coinserver
 	cfg := c.config.GetStringMap("NodeConfig")
 	cfgProc := map[string]string{}
@@ -267,6 +180,10 @@ func (c *CoinBuddy) RunNode() error {
 	return c.cs.WaitUntilUp()
 }
 
+func (c *CoinBuddy) RunEtcdHealth() error {
+	return nil
+}
+
 func (c *CoinBuddy) Stop() {
 	if c.cs != nil {
 		log.Info("Stopping coinserver")
@@ -276,21 +193,4 @@ func (c *CoinBuddy) Stop() {
 		log.Info("Shutting down broadcaster")
 		c.broadcast.Close()
 	}
-}
-
-func main() {
-	cb := NewCoinBuddy("config")
-	defer cb.Stop()
-	err := cb.RunNode()
-	if err != nil {
-		log.WithError(err).Fatal("Coinserver never came up for 90 seconds")
-	}
-	cb.RunBlockListener()
-	cb.RunEventListener()
-
-	// Wait until we recieve sigint
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	// Defered cleanup is performed now
 }
