@@ -9,16 +9,22 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
+	"net/http"
 	"strings"
 	"time"
 )
+
+type TemplateKey struct {
+	algo     string
+	currency string
+}
 
 type Ngpool struct {
 	config             *viper.Viper
 	etcd               client.Client
 	etcdKeys           client.KeysAPI
 	coinserverWatchers map[string]*CoinserverWatcher
-	currencyCast       map[string]broadcast.Broadcaster
+	templateCast       map[TemplateKey]broadcast.Broadcaster
 }
 
 func NewNgpool(configFile string) *Ngpool {
@@ -53,7 +59,7 @@ func NewNgpool(configFile string) *Ngpool {
 	ng := &Ngpool{
 		config:             config,
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
-		currencyCast:       make(map[string]broadcast.Broadcaster),
+		templateCast:       make(map[TemplateKey]broadcast.Broadcaster),
 	}
 
 	levelConfig := config.GetString("LogLevel")
@@ -92,19 +98,59 @@ type CoinserverWatcher struct {
 }
 
 func (cw *CoinserverWatcher) Run() {
-	client := sse.NewClient(cw.endpoint)
+	client := &sse.Client{
+		URL:            cw.endpoint + "blocks",
+		EncodingBase64: true,
+		Connection:     &http.Client{},
+		Headers:        make(map[string]string),
+	}
+	defer close(cw.done)
 
-	client.Subscribe("block", func(msg *sse.Event) {
-		log.Debugf("Got new block from %s: %v", cw.endpoint, msg)
-		cw.currencyCast.Submit(msg)
-	})
+	for {
+		events := make(chan *sse.Event)
+		err := client.SubscribeChan("messages", events)
+		if err != nil {
+			if cw.status != "down" {
+				log.WithError(err).Warn("CoinserverWatcher is now DOWN")
+			}
+			cw.status = "down"
+			time.Sleep(time.Second * 2)
+			log.Debugf("Retrying CoinserverWatcher subscribe")
+			continue
+		}
+		lastEvent := sse.Event{}
+		cw.status = "up"
+		log.Info("CoinserverWatcher is now UP")
+		for {
+			msg := <-events
+			// Unfortunately this SSE library produces an event for every line,
+			// instead of an event for every \n\n as is the standard. So we
+			// manually combine the events into one
+			if msg == nil {
+				break
+			}
+			if msg.Event != nil {
+				lastEvent.Event = msg.Event
+			}
+			if msg.Data != nil {
+				lastEvent.Data = msg.Data
+				log.Debugf("Got new block from %s: %s '%s'", cw.endpoint, lastEvent.Event, lastEvent.Data)
+				cw.currencyCast.Submit(lastEvent)
+				if cw.status != "live" {
+					log.Info("CoinserverWatcher is now LIVE")
+				}
+				cw.status = "live"
+			}
+		}
+	}
 }
 
-func (n *Ngpool) getCurrencyCast(currency string) broadcast.Broadcaster {
-	if _, ok := n.currencyCast[currency]; !ok {
-		n.currencyCast[currency] = broadcast.NewBroadcaster(10)
+func (n *Ngpool) getCurrencyCast(currency string, algo string) broadcast.Broadcaster {
+	key := TemplateKey{currency: currency, algo: algo}
+	if _, ok := n.templateCast[key]; !ok {
+		n.templateCast[key] = broadcast.NewBroadcaster(10)
 	}
-	return n.currencyCast[currency]
+	return n.templateCast[key]
 }
 
 func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
@@ -113,6 +159,7 @@ func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
 	type Status struct {
 		Endpoint string
 		Currency string
+		Algo     string
 	}
 	var info Status
 	err := json.Unmarshal([]byte(node.Value), &info)
@@ -120,13 +167,13 @@ func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
 		log.WithError(err).Warn("Invalid status from service")
 		return err
 	}
-	log.Infof("Node from listing %+v : %+v", serviceID, info)
+	log.Infof("New node %+v : %+v", serviceID, info)
 
 	cw := &CoinserverWatcher{
 		endpoint:     info.Endpoint,
 		status:       "starting",
 		done:         make(chan interface{}),
-		currencyCast: n.getCurrencyCast(info.Currency),
+		currencyCast: n.getCurrencyCast(info.Currency, info.Algo),
 		id:           serviceID,
 	}
 	n.coinserverWatchers[info.Endpoint] = cw
@@ -140,14 +187,29 @@ func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
 }
 
 func (n *Ngpool) StartCoinserverDiscovery() {
-	opt := &client.GetOptions{
+	getOpt := &client.GetOptions{
 		Recursive: true,
 	}
-	res, err := n.etcdKeys.Get(context.Background(), "/services/coinservers", opt)
+	res, err := n.etcdKeys.Get(context.Background(), "/services/coinservers", getOpt)
 	if err != nil {
 		log.WithError(err).Fatal("Unable to contact etcd")
 	}
 	for _, node := range res.Node.Nodes {
 		n.addCoinserverWatcher(node)
+	}
+	// Start a watcher for all changes after the pull we're doing
+	watchOpt := &client.WatcherOptions{
+		AfterIndex: res.Index,
+		Recursive:  true,
+	}
+	watcher := n.etcdKeys.Watcher("/services/coinservers", watchOpt)
+	for {
+		res, err = watcher.Next(context.Background())
+		if err != nil {
+			log.WithError(err).Warn("Error from coinserver watcher")
+			time.Sleep(time.Second * 2)
+			continue
+		}
+		log.Infof("got change: %#v", res)
 	}
 }
