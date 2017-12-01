@@ -15,8 +15,9 @@ import (
 )
 
 type TemplateKey struct {
-	algo     string
-	currency string
+	algo         string
+	currency     string
+	templateType string
 }
 
 type Ngpool struct {
@@ -92,19 +93,27 @@ type CoinserverWatcher struct {
 	id           string
 	endpoint     string
 	status       string
+	meta         map[string]interface{}
 	lastBlock    time.Time
 	currencyCast broadcast.Broadcaster
 	done         chan interface{}
 }
 
+func (cw *CoinserverWatcher) Stop() {
+	// Trigger the stopping of the watcher, and wait for complete shutdown (it
+	// will close channel 'done' on exit)
+	cw.done <- ""
+	<-cw.done
+}
+
 func (cw *CoinserverWatcher) Run() {
+	defer close(cw.done)
 	client := &sse.Client{
 		URL:            cw.endpoint + "blocks",
 		EncodingBase64: true,
 		Connection:     &http.Client{},
 		Headers:        make(map[string]string),
 	}
-	defer close(cw.done)
 
 	for {
 		events := make(chan *sse.Event)
@@ -122,31 +131,39 @@ func (cw *CoinserverWatcher) Run() {
 		cw.status = "up"
 		log.Info("CoinserverWatcher is now UP")
 		for {
-			msg := <-events
-			// Unfortunately this SSE library produces an event for every line,
-			// instead of an event for every \n\n as is the standard. So we
-			// manually combine the events into one
-			if msg == nil {
-				break
-			}
-			if msg.Event != nil {
-				lastEvent.Event = msg.Event
-			}
-			if msg.Data != nil {
-				lastEvent.Data = msg.Data
-				log.Debugf("Got new block from %s: %s '%s'", cw.endpoint, lastEvent.Event, lastEvent.Data)
-				cw.currencyCast.Submit(lastEvent)
-				if cw.status != "live" {
-					log.Info("CoinserverWatcher is now LIVE")
+			// Wait for new event or exit signal
+			select {
+			case <-cw.done:
+				return
+			case msg := <-events:
+				// When the connection breaks we get a nill pointer. Break out
+				// of loop and try to reconnect
+				if msg == nil {
+					break
 				}
-				cw.status = "live"
+				// Unfortunately this SSE library produces an event for every
+				// line, instead of an event for every \n\n as is the standard.
+				// So we manually combine the events into one
+				if msg.Event != nil {
+					lastEvent.Event = msg.Event
+				}
+				if msg.Data != nil {
+					lastEvent.Data = msg.Data
+					log.Debugf("Got new template from %s: %s '%s'",
+						cw.endpoint, lastEvent.Event, lastEvent.Data)
+					cw.currencyCast.Submit(lastEvent)
+					if cw.status != "live" {
+						log.Info("CoinserverWatcher is now LIVE")
+					}
+					cw.status = "live"
+				}
 			}
 		}
 	}
 }
 
-func (n *Ngpool) getCurrencyCast(currency string, algo string) broadcast.Broadcaster {
-	key := TemplateKey{currency: currency, algo: algo}
+func (n *Ngpool) getCurrencyCast(currency string, algo string, templateType string) broadcast.Broadcaster {
+	key := TemplateKey{currency: currency, algo: algo, templateType: templateType}
 	if _, ok := n.templateCast[key]; !ok {
 		n.templateCast[key] = broadcast.NewBroadcaster(10)
 	}
@@ -154,12 +171,15 @@ func (n *Ngpool) getCurrencyCast(currency string, algo string) broadcast.Broadca
 }
 
 func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
+	// Parse all the node details about the watcher
 	lbi := strings.LastIndexByte(node.Key, '/') + 1
 	serviceID := node.Key[lbi:]
 	type Status struct {
-		Endpoint string
-		Currency string
-		Algo     string
+		Endpoint     string
+		Currency     string
+		Algo         string
+		TemplateType string `json:"template_type"`
+		Meta         map[string]interface{}
 	}
 	var info Status
 	err := json.Unmarshal([]byte(node.Value), &info)
@@ -167,21 +187,38 @@ func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
 		log.WithError(err).Warn("Invalid status from service")
 		return err
 	}
-	log.Infof("New node %+v : %+v", serviceID, info)
+	currencyCast := n.getCurrencyCast(info.Currency, info.Algo, info.TemplateType)
 
+	// Check if we're already running a watcher for this ServiceID
+	if csw, ok := n.coinserverWatchers[serviceID]; ok {
+		if currencyCast != csw.currencyCast {
+			// If essential information about the coinserver has changed, we
+			// must restart the coinserver watcher, so stop the old one
+			csw.Stop()
+		} else {
+			// The server information has simple been updated
+			csw.meta = info.Meta
+			return nil
+		}
+	}
+
+	// Start a new coinserver watcher
+	log.Infof("New node %+v : %+v", serviceID, info)
 	cw := &CoinserverWatcher{
 		endpoint:     info.Endpoint,
 		status:       "starting",
 		done:         make(chan interface{}),
-		currencyCast: n.getCurrencyCast(info.Currency, info.Algo),
+		currencyCast: currencyCast,
 		id:           serviceID,
+		meta:         info.Meta,
 	}
-	n.coinserverWatchers[info.Endpoint] = cw
-	go cw.Run()
+	n.coinserverWatchers[serviceID] = cw
+
+	// Cleanup the coinserverWatchers map after exit of the watcher
 	go func() {
-		<-cw.done
-		delete(n.coinserverWatchers, info.Endpoint)
-		log.Debug("Cleanup coinserver watcher ", info.Endpoint)
+		cw.Run()
+		delete(n.coinserverWatchers, serviceID)
+		log.Debug("Cleanup coinserver watcher ", serviceID)
 	}()
 	return nil
 }
@@ -210,6 +247,16 @@ func (n *Ngpool) StartCoinserverDiscovery() {
 			time.Sleep(time.Second * 2)
 			continue
 		}
-		log.Infof("got change: %#v", res)
+		lbi := strings.LastIndexByte(res.Node.Key, '/') + 1
+		serviceID := res.Node.Key[lbi:]
+		log.Debugf("coinserver %s status key %s", serviceID, res.Action)
+		if res.Action == "expire" {
+			if csw, ok := n.coinserverWatchers[serviceID]; ok {
+				log.Info("Coinserver shutdown ", serviceID)
+				csw.Stop()
+			}
+		} else if res.Action == "set" || res.Action == "update" {
+			n.addCoinserverWatcher(res.Node)
+		}
 	}
 }
