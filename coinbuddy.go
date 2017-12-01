@@ -111,7 +111,7 @@ func (c *CoinBuddy) RunEventListener() {
 			close(listener)
 		}()
 		ctx.Stream(func(w io.Writer) bool {
-			ctx.SSEvent("message", <-listener)
+			ctx.SSEvent("block", <-listener)
 			return true
 		})
 		c.lastBlockMtx.RLock()
