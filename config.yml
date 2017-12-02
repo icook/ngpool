@@ -1,0 +1,3 @@
+NodeConfig:
+    testnet: "1"
+    datadir: "~/.litecoin/"
