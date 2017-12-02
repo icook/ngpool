@@ -28,34 +28,12 @@ type Ngpool struct {
 	templateCast       map[TemplateKey]broadcast.Broadcaster
 }
 
-func NewNgpool(configFile string) *Ngpool {
+func NewNgpool() *Ngpool {
 	config := viper.New()
 
 	config.SetDefault("LogLevel", "info")
-	config.SetDefault("EtcdEndpoint", "http://127.0.0.1:4001")
 	// Load from Env so we can access etcd
 	config.AutomaticEnv()
-
-	// Load from etcd if the user specifies a serviceID, otherwise try config.yaml
-	serviceID := config.GetString("ServiceID")
-	if serviceID != "" {
-		log.Infof("Loaded service ID %s, pulling config from etcd", serviceID)
-		config.AddRemoteProvider("etcd", config.GetString("EtcdEndpoint"), "/config/"+serviceID)
-		config.SetConfigType("yaml")
-		err := config.ReadRemoteConfig()
-		if err != nil {
-			log.WithError(err).Warn("Unable to load from etcd")
-		}
-	} else {
-		// Load from file
-		config.SetConfigName(configFile)
-		config.AddConfigPath(".")
-		config.SetConfigType("yaml")
-		err := config.ReadInConfig()
-		if err != nil {
-			log.WithError(err).Fatalf("failed to parse configuration file '%s.yaml'", configFile)
-		}
-	}
 
 	ng := &Ngpool{
 		config:             config,
@@ -63,7 +41,11 @@ func NewNgpool(configFile string) *Ngpool {
 		templateCast:       make(map[TemplateKey]broadcast.Broadcaster),
 	}
 
-	levelConfig := config.GetString("LogLevel")
+	return ng
+}
+
+func (n *Ngpool) Run() {
+	levelConfig := n.config.GetString("LogLevel")
 	level, err := log.ParseLevel(levelConfig)
 	if err != nil {
 		log.WithError(err).Fatal("Unable to parse log level %s", levelConfig)
@@ -71,19 +53,7 @@ func NewNgpool(configFile string) *Ngpool {
 	log.Info("Set log level to ", level)
 	log.SetLevel(level)
 
-	cfg := client.Config{
-		Endpoints: []string{config.GetString("EtcdEndpoint")},
-		Transport: client.DefaultTransport,
-		// set timeout per request to fail fast when the target endpoint is unavailable
-		HeaderTimeoutPerRequest: time.Second,
-	}
-	ng.etcd, err = client.New(cfg)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ng.etcdKeys = client.NewKeysAPI(ng.etcd)
-
-	return ng
+	n.StartCoinserverDiscovery()
 }
 
 func (n *Ngpool) Stop() {
