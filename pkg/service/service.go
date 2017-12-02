@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/coreos/etcd/client"
+	"github.com/fatih/color"
 	"strings"
 	//	"github.com/satori/go.uuid.git"
+	"github.com/satori/go.uuid"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -28,6 +30,8 @@ type Service struct {
 	pushMeta      chan map[string]interface{}
 	etcd          client.Client
 	etcdKeys      client.KeysAPI
+	configKeyPath string
+	editor        string
 }
 
 func NewService(namespace string, config *viper.Viper, getAttributes func() map[string]interface{}) *Service {
@@ -35,8 +39,9 @@ func NewService(namespace string, config *viper.Viper, getAttributes func() map[
 		namespace:     namespace,
 		config:        config,
 		getAttributes: getAttributes,
-		serviceID:     config.GetString("ServiceID"),
+		editor:        "vi",
 	}
+	s.SetServiceID(s.config.GetString("ServiceID"))
 	s.config.SetDefault("EtcdEndpoint", []string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
 
 	log.Infof("Loaded service ID %s, pulling config from etcd", s.serviceID)
@@ -62,6 +67,11 @@ func NewService(namespace string, config *viper.Viper, getAttributes func() map[
 	s.etcdKeys = client.NewKeysAPI(s.etcd)
 
 	return s
+}
+
+func (s *Service) SetServiceID(id string) {
+	s.serviceID = id
+	s.configKeyPath = "/config/" + s.namespace + "/" + s.serviceID
 }
 
 func (s *Service) KeepAlive() error {
@@ -105,20 +115,95 @@ func (s *Service) KeepAlive() error {
 	return nil
 }
 
+func (s *Service) getDefaultConfig() string {
+	b, err := yaml.Marshal(s.config.AllSettings())
+	if err != nil {
+		log.WithError(err).Fatal("Failed to serialize config")
+	}
+	return string(b)
+}
+
+func (s *Service) editFile(fpath string) string {
+	// Launch editor with our tmp file
+	editorPath, err := exec.LookPath(s.editor)
+	if err != nil {
+		log.WithError(err).Fatalf("Failed to lookup path for '%s'", s.editor)
+	}
+	cmd := exec.Command(editorPath, fpath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Start()
+	if err != nil {
+		log.WithError(err).Fatal("Failed to start editor")
+	}
+	err = cmd.Wait()
+
+	// Read in edited config
+	newConfigByte, err := ioutil.ReadFile(fpath)
+	newConfig := string(newConfigByte)
+	if err != nil {
+		log.WithError(err).Fatal("Somehow we fail to read a file we just made...")
+	}
+	return newConfig
+}
+
+func (s *Service) mktmp(contents string) *os.File {
+	// Generate a new temporary file with our config from the server
+	randSuffix := time.Now().UnixNano() + int64(os.Getpid())
+	fname := fmt.Sprintf("%s_cfgscratch.%d.yaml", s.namespace, randSuffix)
+	fpath := filepath.Join(os.TempDir(), fname)
+	tmpFile, err := os.OpenFile(fpath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+	if os.IsExist(err) {
+		log.WithError(err).WithField("fname", fname).Fatal("Failed to make file, maybe another editor is open now?")
+	}
+	_, err = tmpFile.WriteString(contents)
+	if err != nil {
+		log.WithError(err).Fatal("Failed to write tmp file")
+	}
+	tmpFile.Close()
+	return tmpFile
+}
+
+func (s *Service) modifyLoop(currentVal string) {
+	tmpFile := s.mktmp(currentVal)
+	defer os.Remove(tmpFile.Name())
+
+	for {
+		newConfig := s.editFile(tmpFile.Name())
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(currentVal, newConfig, false)
+		fmt.Println(dmp.DiffPrettyText(diffs))
+		for {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Push changes (y,n,e): ")
+			text, _ := reader.ReadString('\n')
+			input := strings.TrimSpace(text)
+			if input == "y" {
+				_, err := s.etcdKeys.Set(
+					context.Background(), s.configKeyPath, newConfig, nil)
+				if err != nil {
+					log.WithError(err).Fatal("Failed pushing config")
+				}
+				log.Infof("Successfully pushed to %s", s.configKeyPath)
+				return
+			} else if input == "e" {
+				break
+			} else if input != "n" {
+				continue
+			}
+			return
+		}
+	}
+}
+
 func (s *Service) SetupCmds(rootCmd *cobra.Command) {
-	var (
-		fileName string
-	)
-	editconfig := &cobra.Command{
+	editconfigCmd := &cobra.Command{
 		Use:   "editconfig",
 		Short: "Opens the config in an editor",
 		Run: func(cmd *cobra.Command, args []string) {
-			configKeyPath := "/config/" + s.namespace + "/" + s.serviceID
-			log.Info(configKeyPath)
-			editor := "vim"
-
 			// Get current config
-			configResp, err := s.etcdKeys.Get(context.Background(), configKeyPath, nil)
+			configResp, err := s.etcdKeys.Get(context.Background(), s.configKeyPath, nil)
 			var currentConfig string = ""
 			if err != nil {
 				log.WithError(err).Info("Failed fetching config")
@@ -127,12 +212,7 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 				text, _ := reader.ReadString('\n')
 				input := strings.TrimSpace(text)
 				if input == "y" {
-					b, err := yaml.Marshal(s.config.AllSettings())
-					log.Info(string(b))
-					if err != nil {
-						log.WithError(err).Fatal("Failed to serialize config")
-					}
-					currentConfig = string(b)
+					currentConfig = s.getDefaultConfig()
 				} else if input == "q" {
 					return
 				}
@@ -140,73 +220,10 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 				currentConfig = string(configResp.Node.Value)
 			}
 
-			// Generate a new temporary file with our config from the server
-			randSuffix := time.Now().UnixNano() + int64(os.Getpid())
-			fname := fmt.Sprintf("%s_cfgscratch.%d.yaml", s.namespace, randSuffix)
-			fpath := filepath.Join(os.TempDir(), fname)
-			tmpFile, err := os.OpenFile(fpath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
-			if os.IsExist(err) {
-				log.WithError(err).WithField("fname", fname).Fatal("Failed to make file, maybe another editor is open now?")
-			}
-			_, err = tmpFile.WriteString(currentConfig)
-			if err != nil {
-				log.WithError(err).Fatal("Failed to write tmp file")
-			}
-			tmpFile.Close()
-			defer os.Remove(fpath)
-
-			// Launch editor with our tmp file
-			editorPath, err := exec.LookPath(editor)
-			if err != nil {
-				log.WithError(err).Fatalf("Failed to lookup path for '%s'", editor)
-			}
-			editFile := func() string {
-				cmd := exec.Command(editorPath, tmpFile.Name())
-				cmd.Stdin = os.Stdin
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				err = cmd.Start()
-				if err != nil {
-					log.WithError(err).Fatal("Failed to start editor")
-				}
-				err = cmd.Wait()
-
-				// Read in edited config
-				newConfigByte, err := ioutil.ReadFile(fpath)
-				newConfig := string(newConfigByte)
-				if err != nil {
-					log.WithError(err).Fatal("Somehow we fail to read a file we just made...")
-				}
-				dmp := diffmatchpatch.New()
-				diffs := dmp.DiffMain(currentConfig, newConfig, false)
-				fmt.Println(dmp.DiffPrettyText(diffs))
-				return newConfig
-			}
-
-			for {
-				newConfig := editFile()
-				for {
-					reader := bufio.NewReader(os.Stdin)
-					fmt.Print("Push changes (y,n,e): ")
-					text, _ := reader.ReadString('\n')
-					input := strings.TrimSpace(text)
-					if input == "y" {
-						_, err = s.etcdKeys.Set(
-							context.Background(), configKeyPath, newConfig, nil)
-						if err != nil {
-							log.WithError(err).Fatal("Failed pushing config")
-						}
-						log.Infof("Successfully pushed to /config/%s/%s", s.namespace, s.serviceID)
-						return
-					} else if input == "e" {
-						break
-					} else if input != "n" {
-						continue
-					}
-					return
-				}
-			}
+			s.modifyLoop(currentConfig)
 		}}
+
+	var fileName string
 	loadconfigCmd := &cobra.Command{
 		Use:   "pushconfig",
 		Short: "Loads the config and displays it",
@@ -224,6 +241,7 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 			log.Infof("Successfully pushed '%s' to /config/%s/%s", fileName, s.namespace, serviceID)
 		}}
 	loadconfigCmd.Flags().StringVarP(&fileName, "config", "c", "", "the config to load")
+
 	dumpconfigCmd := &cobra.Command{
 		Use:   "dumpconfig",
 		Short: "Loads the config and displays it",
@@ -234,7 +252,38 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 			}
 			fmt.Println(string(b))
 		}}
-	rootCmd.AddCommand(editconfig)
+
+	newCmd := &cobra.Command{
+		Use:   "new",
+		Short: "Creates a new service configuration",
+		Run: func(cmd *cobra.Command, args []string) {
+			s.SetServiceID(uuid.NewV4().String())
+			def := s.getDefaultConfig()
+			s.modifyLoop(def)
+		}}
+
+	lsCmd := &cobra.Command{
+		Use:   "ls",
+		Short: "Lists all service configs",
+		Run: func(cmd *cobra.Command, args []string) {
+			getOpt := &client.GetOptions{
+				Recursive: true,
+			}
+			res, err := s.etcdKeys.Get(context.Background(), "/config/"+s.namespace, getOpt)
+			if err != nil {
+				log.WithError(err).Fatal("Unable to contact etcd")
+			}
+			for _, node := range res.Node.Nodes {
+				lbi := strings.LastIndexByte(node.Key, '/') + 1
+				serviceID := node.Key[lbi:]
+				color.Green("export SERVICEID=%s", serviceID)
+				fmt.Println(node.Value)
+				fmt.Println()
+			}
+		}}
+	rootCmd.AddCommand(newCmd)
+	rootCmd.AddCommand(lsCmd)
+	rootCmd.AddCommand(editconfigCmd)
 	rootCmd.AddCommand(dumpconfigCmd)
 	rootCmd.AddCommand(loadconfigCmd)
 }
