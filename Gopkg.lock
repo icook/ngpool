@@ -140,6 +140,18 @@
   version = "v0.8.0"
 
 [[projects]]
+  name = "github.com/satori/go.uuid.git"
+  packages = ["."]
+  revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
+  version = "v1.1.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/sergi/go-diff"
+  packages = ["diffmatchpatch"]
+  revision = "1744e2970ca51c86172c8190fadad617561ed6e7"
+
+[[projects]]
   branch = "master"
   name = "github.com/shopspring/decimal"
   packages = ["."]
@@ -238,6 +250,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d89d76f4f6b7d0f1d800e1669cb4d8f13d917b9feb524b01f460b91de6530c84"
+  inputs-digest = "14b8d696c38d39f01f79498b56888ff8cd2fe36527ab177ebe2a89bd9bc66fa7"
   solver-name = "gps-cdcl"
   solver-version = 1

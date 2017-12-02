@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/btcd/btcjson"
@@ -22,8 +20,6 @@ import (
 type CoinBuddy struct {
 	config        *viper.Viper
 	cs            *Coinserver
-	etcd          client.Client
-	etcdKeys      client.KeysAPI
 	blockListener *http.Server
 	eventListener *gin.Engine
 	lastBlock     json.RawMessage
@@ -31,13 +27,12 @@ type CoinBuddy struct {
 	broadcast     broadcast.Broadcaster
 }
 
-func NewCoinBuddy(configFile string) *CoinBuddy {
+func NewCoinBuddy() *CoinBuddy {
 	config := viper.New()
 
 	config.SetDefault("LogLevel", "info")
 	config.SetDefault("BlockListenerBind", "127.0.0.1:3000")
 	config.SetDefault("EventListenerBind", "127.0.0.1:4000")
-	config.SetDefault("EtcdEndpoint", "http://127.0.0.1:4001")
 	config.SetDefault("CurrencyCode", "BTC")
 	config.SetDefault("HashingAlgo", "sha256d")
 	config.SetDefault("CoinserverBinary", "bitcoind")
@@ -46,30 +41,6 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 	config.SetDefault("NodeConfig.port", "19000")
 	config.SetDefault("NodeConfig.rpcport", "19001")
 	config.SetDefault("NodeConfig.server", "1")
-
-	// Load from Env so we can access etcd
-	config.AutomaticEnv()
-
-	// Load from etcd if the user specifies a serviceID, otherwise try config.yaml
-	serviceID := config.GetString("ServiceID")
-	if serviceID != "" {
-		log.Infof("Loaded service ID %s, pulling config from etcd", serviceID)
-		config.AddRemoteProvider("etcd", config.GetString("EtcdEndpoint"), "/config/"+serviceID)
-		config.SetConfigType("yaml")
-		err := config.ReadRemoteConfig()
-		if err != nil {
-			log.WithError(err).Warn("Unable to load from etcd")
-		}
-	} else {
-		// Load from file
-		config.SetConfigName(configFile)
-		config.AddConfigPath(".")
-		config.SetConfigType("yaml")
-		err := config.ReadInConfig()
-		if err != nil {
-			log.WithError(err).Fatalf("failed to parse configuration file '%s.yaml'", configFile)
-		}
-	}
 
 	// Load from Env, which will overwrite everything else
 	config.AutomaticEnv()
@@ -80,7 +51,11 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 		lastBlockMtx: sync.RWMutex{},
 	}
 
-	levelConfig := config.GetString("LogLevel")
+	return cb
+}
+
+func (c *CoinBuddy) Run() {
+	levelConfig := c.config.GetString("LogLevel")
 	level, err := log.ParseLevel(levelConfig)
 	if err != nil {
 		log.WithError(err).Fatal("Unable to parse log level %s", levelConfig)
@@ -88,19 +63,12 @@ func NewCoinBuddy(configFile string) *CoinBuddy {
 	log.Info("Set log level to ", level)
 	log.SetLevel(level)
 
-	cfg := client.Config{
-		Endpoints: []string{config.GetString("EtcdEndpoint")},
-		Transport: client.DefaultTransport,
-		// set timeout per request to fail fast when the target endpoint is unavailable
-		HeaderTimeoutPerRequest: time.Second,
-	}
-	cb.etcd, err = client.New(cfg)
+	err = c.RunCoinserver()
 	if err != nil {
-		log.Fatal(err)
+		log.WithError(err).Fatal("Coinserver never came up for 90 seconds")
 	}
-	cb.etcdKeys = client.NewKeysAPI(cb.etcd)
-
-	return cb
+	c.RunBlockListener()
+	c.RunEventListener()
 }
 
 func (c *CoinBuddy) RunEventListener() {
@@ -203,56 +171,6 @@ func (c *CoinBuddy) RunCoinserver() error {
 
 	go c.cs.Run()
 	return c.cs.WaitUntilUp()
-}
-
-func (c *CoinBuddy) RunEtcdHealth() error {
-	// conn, err := net.Dial("udp", "8.8.8.8:80")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer conn.Close()
-
-	// localAddr := conn.LocalAddr().(*net.UDPAddr)
-	// localIP := localAddr.IP
-	// log.WithField("ip", localIP).Info("Detected routable IP address")
-
-	go func() {
-		var (
-			lastStatus string
-			serviceID  string = c.config.GetString("ServiceID")
-		)
-		for {
-			time.Sleep(time.Second * 10)
-			statusRaw, err := json.Marshal(map[string]interface{}{
-				"algo":     c.config.GetString("HashingAlgo"),
-				"currency": c.config.GetString("CurrencyCode"),
-				"endpoint": fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),
-			})
-			status := string(statusRaw)
-			if err != nil {
-				log.WithError(err).Error("Failed serialization of status update")
-				continue
-			}
-			opt := &client.SetOptions{
-				TTL: time.Second * 15,
-			}
-			// Don't update if no new information, just refresh TTL
-			if status == lastStatus {
-				opt.Refresh = true
-				opt.PrevExist = client.PrevExist
-				status = ""
-			} else {
-				lastStatus = status
-			}
-			_, err = c.etcdKeys.Set(
-				context.Background(), "/services/coinservers/"+serviceID, status, opt)
-			if err != nil {
-				log.WithError(err).Warn("Failed to update etcd status entry")
-				continue
-			}
-		}
-	}()
-	return nil
 }
 
 func (c *CoinBuddy) Stop() {
