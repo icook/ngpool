@@ -1,2 +1,2 @@
-# coinbuddy
-An SSE based block notification service
+# ngpool
+The next generation of simplecoin. Still wip, don't look yet
