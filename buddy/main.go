@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/icook/ngpool/pkg/service"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -25,7 +26,7 @@ func init() {
 			"endpoint": fmt.Sprintf("http://%s/", cb.config.GetString("EventListenerBind")),
 		}
 	}
-	s := NewService("coinserver", cb.config, getAttributes)
+	s := service.NewService("coinserver", cb.config, getAttributes)
 	s.SetupCmds(RootCmd)
 	runCmd := &cobra.Command{
 		Use:   "run",
