@@ -168,7 +168,7 @@ func (c *CoinBuddy) RunCoinserver() error {
 		cfgProc[key] = v.(string)
 	}
 	blocknotify := "/usr/bin/curl http://" + c.config.GetString("BlockListenerBind") + "/notif?id=%s"
-	c.cs = NewCoinserver(cfgProc, blocknotify)
+	c.cs = NewCoinserver(cfgProc, blocknotify, c.config.GetString("CoinserverBinary"))
 
 	err := c.cs.Run()
 	if err != nil {

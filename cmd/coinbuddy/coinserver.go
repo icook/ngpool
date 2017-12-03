@@ -22,7 +22,7 @@ type Coinserver struct {
 	command *exec.Cmd
 }
 
-func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinserver {
+func NewCoinserver(overrideConfig map[string]string, blocknotify string, coinserverBinary string) *Coinserver {
 	// Set some defaults
 	config := map[string]string{
 		"blocknotify": blocknotify,
@@ -51,7 +51,7 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 	}
 
 	// Start server
-	c.command = exec.Command("litecoind", args...)
+	c.command = exec.Command(coinserverBinary, args...)
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         fmt.Sprintf("localhost:%v", config["rpcport"]),
