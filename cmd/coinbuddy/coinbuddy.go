@@ -169,7 +169,10 @@ func (c *CoinBuddy) RunCoinserver() error {
 	blocknotify := "/usr/bin/curl http://" + c.config.GetString("BlockListenerBind") + "/notif?id=%s"
 	c.cs = NewCoinserver(cfgProc, blocknotify)
 
-	go c.cs.Run()
+	err := c.cs.Run()
+	if err != nil {
+		log.WithError(err).Fatal("Failed to start coinserver")
+	}
 	return c.cs.WaitUntilUp()
 }
 

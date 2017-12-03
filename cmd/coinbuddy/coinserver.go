@@ -6,6 +6,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -50,7 +51,6 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string) *Coinse
 	}
 
 	// Start server
-	log.Debug("Starting coinserver with config ", args)
 	c.command = exec.Command("litecoind", args...)
 
 	connCfg := &rpcclient.ConnConfig{
@@ -140,7 +140,25 @@ func (c *Coinserver) kill(proc *os.Process) error {
 }
 
 func (c *Coinserver) Run() error {
-	return c.command.Run()
+	log.Debugf("Starting coinserver with command %s %v", c.command.Path, c.command.Args)
+	done := make(chan interface{}, 1)
+	buf := make([]byte, 2048)
+	stderr, err := c.command.StderrPipe()
+	if err != nil {
+		log.WithError(err).Error("Failed to read stderr of coinserver")
+	}
+	go func() {
+		io.ReadFull(stderr, buf)
+		close(done)
+	}()
+	c.command.Start()
+	select {
+	case <-done:
+		log.Info("Coinserver exited with errors: ", string(buf))
+		return errors.New("Coinserver exited early")
+	case <-time.After(time.Second * 2):
+	}
+	return nil
 }
 
 func (c *Coinserver) WaitUntilUp() error {
