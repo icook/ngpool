@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	//"github.com/davecgh/go-spew/spew"
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/dustin/go-broadcast"
 	"github.com/mitchellh/mapstructure"
 	"github.com/seehuhn/sha256d"
@@ -56,8 +58,13 @@ type BlockTemplate struct {
 	Height            int64
 }
 
-func (t *BlockTemplate) getTarget() big.Int {
-	return big.Int{}
+func (t *BlockTemplate) getTarget() (*big.Int, error) {
+	bits, err := hex.DecodeString(t.Bits)
+	if err != nil {
+		return nil, err
+	}
+	bitsUint := binary.BigEndian.Uint32(bits)
+	return blockchain.CompactToBig(bitsUint), nil
 }
 
 func reverseBytes(s []byte) {
