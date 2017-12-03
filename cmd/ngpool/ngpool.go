@@ -1,16 +1,14 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
+	"github.com/icook/ngpool/pkg/service"
 	"github.com/r3labs/sse"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -44,7 +42,7 @@ func NewNgpool() *Ngpool {
 	return ng
 }
 
-func (n *Ngpool) Run() {
+func (n *Ngpool) Run(service *service.Service) {
 	levelConfig := n.config.GetString("LogLevel")
 	level, err := log.ParseLevel(levelConfig)
 	if err != nil {
@@ -53,7 +51,11 @@ func (n *Ngpool) Run() {
 	log.Info("Set log level to ", level)
 	log.SetLevel(level)
 
-	n.StartCoinserverDiscovery()
+	updates, err := service.ServiceWatcher("coinserver")
+	if err != nil {
+		log.WithError(err).Fatal("Failed to start coinserver watcher")
+	}
+	go n.HandleCoinserverWatcherUpdates(updates)
 }
 
 func (n *Ngpool) Stop() {
@@ -63,7 +65,6 @@ type CoinserverWatcher struct {
 	id           string
 	endpoint     string
 	status       string
-	meta         map[string]interface{}
 	lastBlock    time.Time
 	currencyCast broadcast.Broadcaster
 	done         chan interface{}
@@ -132,101 +133,42 @@ func (cw *CoinserverWatcher) Run() {
 	}
 }
 
+func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStatusUpdate) {
+	log.Infof("Listening for new coinserver services")
+	for {
+		update := <-updates
+		switch update.Action {
+		case "removed":
+			if csw, ok := n.coinserverWatchers[update.ServiceID]; ok {
+				log.Info("Coinserver shutdown ", update.ServiceID)
+				csw.Stop()
+			}
+		case "added":
+			log.Infof("New node %+v : %+v", update.ServiceID, update.Status)
+			labels := update.Status.Labels
+			// TODO: Should probably serialize to datatype...
+			currencyCast := n.getCurrencyCast(
+				labels["currency"].(string),
+				labels["algo"].(string),
+				labels["template_type"].(string),
+			)
+			cw := &CoinserverWatcher{
+				endpoint:     labels["endpoint"].(string),
+				status:       "starting",
+				done:         make(chan interface{}),
+				currencyCast: currencyCast,
+				id:           update.ServiceID,
+			}
+			n.coinserverWatchers[update.ServiceID] = cw
+			log.Infof("New coinserver detected: %s %+v", update.ServiceID, update.Status)
+		}
+	}
+}
+
 func (n *Ngpool) getCurrencyCast(currency string, algo string, templateType string) broadcast.Broadcaster {
 	key := TemplateKey{currency: currency, algo: algo, templateType: templateType}
 	if _, ok := n.templateCast[key]; !ok {
 		n.templateCast[key] = broadcast.NewBroadcaster(10)
 	}
 	return n.templateCast[key]
-}
-
-func (n *Ngpool) addCoinserverWatcher(node *client.Node) error {
-	// Parse all the node details about the watcher
-	lbi := strings.LastIndexByte(node.Key, '/') + 1
-	serviceID := node.Key[lbi:]
-	type Status struct {
-		Endpoint     string
-		Currency     string
-		Algo         string
-		TemplateType string `json:"template_type"`
-		Meta         map[string]interface{}
-	}
-	var info Status
-	err := json.Unmarshal([]byte(node.Value), &info)
-	if err != nil {
-		log.WithError(err).Warn("Invalid status from service")
-		return err
-	}
-	currencyCast := n.getCurrencyCast(info.Currency, info.Algo, info.TemplateType)
-
-	// Check if we're already running a watcher for this ServiceID
-	if csw, ok := n.coinserverWatchers[serviceID]; ok {
-		if currencyCast != csw.currencyCast {
-			// If essential information about the coinserver has changed, we
-			// must restart the coinserver watcher, so stop the old one
-			csw.Stop()
-		} else {
-			// The server information has simple been updated
-			csw.meta = info.Meta
-			return nil
-		}
-	}
-
-	// Start a new coinserver watcher
-	log.Infof("New node %+v : %+v", serviceID, info)
-	cw := &CoinserverWatcher{
-		endpoint:     info.Endpoint,
-		status:       "starting",
-		done:         make(chan interface{}),
-		currencyCast: currencyCast,
-		id:           serviceID,
-		meta:         info.Meta,
-	}
-	n.coinserverWatchers[serviceID] = cw
-
-	// Cleanup the coinserverWatchers map after exit of the watcher
-	go func() {
-		cw.Run()
-		delete(n.coinserverWatchers, serviceID)
-		log.Debug("Cleanup coinserver watcher ", serviceID)
-	}()
-	return nil
-}
-
-func (n *Ngpool) StartCoinserverDiscovery() {
-	getOpt := &client.GetOptions{
-		Recursive: true,
-	}
-	res, err := n.etcdKeys.Get(context.Background(), "/services/coinservers", getOpt)
-	if err != nil {
-		log.WithError(err).Fatal("Unable to contact etcd")
-	}
-	for _, node := range res.Node.Nodes {
-		n.addCoinserverWatcher(node)
-	}
-	// Start a watcher for all changes after the pull we're doing
-	watchOpt := &client.WatcherOptions{
-		AfterIndex: res.Index,
-		Recursive:  true,
-	}
-	watcher := n.etcdKeys.Watcher("/services/coinservers", watchOpt)
-	for {
-		res, err = watcher.Next(context.Background())
-		if err != nil {
-			log.WithError(err).Warn("Error from coinserver watcher")
-			time.Sleep(time.Second * 2)
-			continue
-		}
-		lbi := strings.LastIndexByte(res.Node.Key, '/') + 1
-		serviceID := res.Node.Key[lbi:]
-		log.Debugf("coinserver %s status key %s", serviceID, res.Action)
-		if res.Action == "expire" {
-			if csw, ok := n.coinserverWatchers[serviceID]; ok {
-				log.Info("Coinserver shutdown ", serviceID)
-				csw.Stop()
-			}
-		} else if res.Action == "set" || res.Action == "update" {
-			n.addCoinserverWatcher(res.Node)
-		}
-	}
 }
