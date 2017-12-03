@@ -41,6 +41,7 @@ func NewCoinBuddy() *CoinBuddy {
 	config.SetDefault("NodeConfig.port", "19000")
 	config.SetDefault("NodeConfig.rpcport", "19001")
 	config.SetDefault("NodeConfig.server", "1")
+	config.SetDefault("NodeConfig.datadir", "~/.bitcoin")
 
 	// Load from Env, which will overwrite everything else
 	config.AutomaticEnv()
