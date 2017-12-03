@@ -21,9 +21,10 @@ func init() {
 	cb := NewCoinBuddy()
 	getAttributes := func() map[string]interface{} {
 		return map[string]interface{}{
-			"algo":     cb.config.GetString("HashingAlgo"),
-			"currency": cb.config.GetString("CurrencyCode"),
-			"endpoint": fmt.Sprintf("http://%s/", cb.config.GetString("EventListenerBind")),
+			"algo":          cb.config.GetString("HashingAlgo"),
+			"currency":      cb.config.GetString("CurrencyCode"),
+			"endpoint":      fmt.Sprintf("http://%s/", cb.config.GetString("EventListenerBind")),
+			"template_type": "getblocktemplate",
 		}
 	}
 	s := service.NewService("coinserver", cb.config, getAttributes)
