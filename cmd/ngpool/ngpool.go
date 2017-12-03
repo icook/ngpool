@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/ngpool/pkg/service"
@@ -13,9 +14,9 @@ import (
 )
 
 type TemplateKey struct {
-	algo         string
-	currency     string
-	templateType string
+	Algo         string
+	Currency     string
+	TemplateType string
 }
 
 type Ngpool struct {
@@ -23,6 +24,7 @@ type Ngpool struct {
 	etcd               client.Client
 	etcdKeys           client.KeysAPI
 	coinserverWatchers map[string]*CoinserverWatcher
+	stratumPorts       map[int]*StratumServer
 	templateCast       map[TemplateKey]broadcast.Broadcaster
 }
 
@@ -30,6 +32,7 @@ func NewNgpool() *Ngpool {
 	config := viper.New()
 
 	config.SetDefault("LogLevel", "info")
+	config.SetDefault("Ports", []string{})
 	// Load from Env so we can access etcd
 	config.AutomaticEnv()
 
@@ -42,7 +45,7 @@ func NewNgpool() *Ngpool {
 	return ng
 }
 
-func (n *Ngpool) Run(service *service.Service) {
+func (n *Ngpool) Start(service *service.Service) {
 	levelConfig := n.config.GetString("LogLevel")
 	level, err := log.ParseLevel(levelConfig)
 	if err != nil {
@@ -56,6 +59,13 @@ func (n *Ngpool) Run(service *service.Service) {
 		log.WithError(err).Fatal("Failed to start coinserver watcher")
 	}
 	go n.HandleCoinserverWatcherUpdates(updates)
+
+	// Start each of the configured ports
+	for port, _ := range n.config.GetStringMap("Ports") {
+		subConfig := n.config.Sub(fmt.Sprintf("Ports.%s", port))
+		ss := NewStratumServer(subConfig, n.getCurrencyCast)
+		ss.Start()
+	}
 }
 
 func (n *Ngpool) Stop() {
@@ -73,11 +83,15 @@ type CoinserverWatcher struct {
 func (cw *CoinserverWatcher) Stop() {
 	// Trigger the stopping of the watcher, and wait for complete shutdown (it
 	// will close channel 'done' on exit)
+	if cw.done == nil {
+		return
+	}
 	cw.done <- ""
 	<-cw.done
 }
 
 func (cw *CoinserverWatcher) Run() {
+	cw.done = make(chan interface{})
 	defer close(cw.done)
 	client := &sse.Client{
 		URL:            cw.endpoint + "blocks",
@@ -122,7 +136,7 @@ func (cw *CoinserverWatcher) Run() {
 					lastEvent.Data = msg.Data
 					log.Debugf("Got new template from %s: %s '%s'",
 						cw.endpoint, lastEvent.Event, lastEvent.Data)
-					cw.currencyCast.Submit(lastEvent)
+					cw.currencyCast.Submit(string(lastEvent.Data))
 					if cw.status != "live" {
 						log.Info("CoinserverWatcher is now LIVE")
 					}
@@ -143,30 +157,32 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 				log.Info("Coinserver shutdown ", update.ServiceID)
 				csw.Stop()
 			}
+		case "updated":
+			log.Infof("Coinserver status update: %s %+v", update.ServiceID, update.Status)
 		case "added":
-			log.Infof("New node %+v : %+v", update.ServiceID, update.Status)
 			labels := update.Status.Labels
 			// TODO: Should probably serialize to datatype...
-			currencyCast := n.getCurrencyCast(
-				labels["currency"].(string),
-				labels["algo"].(string),
-				labels["template_type"].(string),
-			)
+			currencyCast := n.getCurrencyCast(TemplateKey{
+				Currency:     labels["currency"].(string),
+				Algo:         labels["algo"].(string),
+				TemplateType: labels["template_type"].(string),
+			})
 			cw := &CoinserverWatcher{
 				endpoint:     labels["endpoint"].(string),
 				status:       "starting",
-				done:         make(chan interface{}),
 				currencyCast: currencyCast,
 				id:           update.ServiceID,
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
+			go cw.Run()
 			log.Infof("New coinserver detected: %s %+v", update.ServiceID, update.Status)
+		default:
+			log.Warn("Unrecognized action from service watcher ", update.Action)
 		}
 	}
 }
 
-func (n *Ngpool) getCurrencyCast(currency string, algo string, templateType string) broadcast.Broadcaster {
-	key := TemplateKey{currency: currency, algo: algo, templateType: templateType}
+func (n *Ngpool) getCurrencyCast(key TemplateKey) broadcast.Broadcaster {
 	if _, ok := n.templateCast[key]; !ok {
 		n.templateCast[key] = broadcast.NewBroadcaster(10)
 	}

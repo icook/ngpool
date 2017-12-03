@@ -170,10 +170,13 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 				} else {
 					action = "added"
 				}
+			} else {
+				log.Debug("Ignoring watch update type ", res.Action)
 			}
 
 			// A little sloppy, but more DRY
 			if action != "" {
+				log.Debugf("Broadcasting service update %s : %s", action, serviceID)
 				updates <- ServiceStatusUpdate{
 					ServiceType: watchNamespace,
 					ServiceID:   serviceID,

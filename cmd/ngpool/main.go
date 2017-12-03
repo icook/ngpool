@@ -29,7 +29,7 @@ func init() {
 		Short: "Run the coinbuddy and coinserver",
 		Run: func(cmd *cobra.Command, args []string) {
 			defer ng.Stop()
-			ng.Run(s)
+			ng.Start(s)
 
 			// Wait until we recieve sigint
 			sigs := make(chan os.Signal, 1)
