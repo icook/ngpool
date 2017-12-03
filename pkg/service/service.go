@@ -199,7 +199,7 @@ func (s *Service) KeepAlive() error {
 	for {
 		select {
 		case lastStatus = <-s.pushStatus:
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 1):
 		}
 
 		// Serialize a new value to write
@@ -213,7 +213,7 @@ func (s *Service) KeepAlive() error {
 			continue
 		}
 
-		opt := &client.SetOptions{TTL: time.Second * 15}
+		opt := &client.SetOptions{TTL: time.Second * 2}
 		// Don't update if no new information, just refresh TTL
 		if value == lastValue {
 			opt.Refresh = true
