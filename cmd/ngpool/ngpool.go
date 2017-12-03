@@ -105,7 +105,7 @@ func (cw *CoinserverWatcher) Run() {
 		err := client.SubscribeChan("messages", events)
 		if err != nil {
 			if cw.status != "down" {
-				log.WithError(err).Warn("CoinserverWatcher is now DOWN")
+				log.WithError(err).Warnf("CoinserverWatcher %s is now DOWN", cw.id)
 			}
 			cw.status = "down"
 			select {
@@ -117,7 +117,7 @@ func (cw *CoinserverWatcher) Run() {
 		}
 		lastEvent := sse.Event{}
 		cw.status = "up"
-		log.Info("CoinserverWatcher is now UP")
+		log.Infof("CoinserverWatcher %s is now UP", cw.id)
 		for {
 			// Wait for new event or exit signal
 			select {
@@ -141,7 +141,7 @@ func (cw *CoinserverWatcher) Run() {
 						cw.endpoint, lastEvent.Event, lastEvent.Data)
 					cw.currencyCast.Submit(string(lastEvent.Data))
 					if cw.status != "live" {
-						log.Info("CoinserverWatcher is now LIVE")
+						log.Infof("CoinserverWatcher %s is now LIVE", cw.id)
 					}
 					cw.status = "live"
 				}
