@@ -108,8 +108,11 @@ func (cw *CoinserverWatcher) Run() {
 				log.WithError(err).Warn("CoinserverWatcher is now DOWN")
 			}
 			cw.status = "down"
-			time.Sleep(time.Second * 2)
-			log.Debugf("Retrying CoinserverWatcher subscribe")
+			select {
+			case <-cw.done:
+				return
+			case <-time.After(time.Second * 2):
+			}
 			continue
 		}
 		lastEvent := sse.Event{}
