@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,7 @@ type Ngpool struct {
 	coinserverWatchers map[string]*CoinserverWatcher
 	stratumPorts       map[int]*StratumServer
 	templateCast       map[TemplateKey]broadcast.Broadcaster
+	templateCastMtx    *sync.Mutex
 }
 
 func NewNgpool() *Ngpool {
@@ -40,6 +42,7 @@ func NewNgpool() *Ngpool {
 		config:             config,
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
 		templateCast:       make(map[TemplateKey]broadcast.Broadcaster),
+		templateCastMtx:    &sync.Mutex{},
 	}
 
 	return ng
@@ -186,8 +189,10 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 }
 
 func (n *Ngpool) getCurrencyCast(key TemplateKey) broadcast.Broadcaster {
+	n.templateCastMtx.Lock()
 	if _, ok := n.templateCast[key]; !ok {
 		n.templateCast[key] = broadcast.NewBroadcaster(10)
 	}
+	n.templateCastMtx.Unlock()
 	return n.templateCast[key]
 }
