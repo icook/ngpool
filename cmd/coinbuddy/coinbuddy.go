@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -93,7 +94,8 @@ func (c *CoinBuddy) RunEventListener() {
 		}()
 		ctx.Stream(func(w io.Writer) bool {
 			in := <-listener
-			out := base64.StdEncoding.EncodeToString(in.(json.RawMessage))
+			strippedIn := bytes.TrimSpace(in.(json.RawMessage))
+			out := base64.StdEncoding.EncodeToString(strippedIn)
 			ctx.SSEvent("block", out)
 			log.Debug("Sent block update to listener")
 			return true

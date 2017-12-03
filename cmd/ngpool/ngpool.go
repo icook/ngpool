@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
@@ -97,10 +98,9 @@ func (cw *CoinserverWatcher) Run() {
 	cw.done = make(chan interface{})
 	defer close(cw.done)
 	client := &sse.Client{
-		URL:            cw.endpoint + "blocks",
-		EncodingBase64: true,
-		Connection:     &http.Client{},
-		Headers:        make(map[string]string),
+		URL:        cw.endpoint + "blocks",
+		Connection: &http.Client{},
+		Headers:    make(map[string]string),
 	}
 
 	for {
@@ -139,10 +139,14 @@ func (cw *CoinserverWatcher) Run() {
 					lastEvent.Event = msg.Event
 				}
 				if msg.Data != nil {
-					lastEvent.Data = msg.Data
+					decoded, err := base64.StdEncoding.DecodeString(string(msg.Data))
+					if err != nil {
+						log.WithField("payload", decoded).Warn("Bad payload from coinserver")
+					}
+					lastEvent.Data = decoded
 					log.Debugf("Got new template from %s: %s '%s'",
 						cw.endpoint, lastEvent.Event, lastEvent.Data)
-					cw.currencyCast.Submit(string(lastEvent.Data))
+					cw.currencyCast.Submit(lastEvent.Data)
 					if cw.status != "live" {
 						log.Infof("CoinserverWatcher %s is now LIVE", cw.id)
 					}
