@@ -4,17 +4,23 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
+	"github.com/btcsuite/btcd/blockchain"
+
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcutil"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
+	"github.com/icook/btcd/rpcclient"
 	"github.com/icook/ngpool/pkg/service"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
 	"github.com/r3labs/sse"
-	"github.com/seehuhn/sha256d"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
-	"math/big"
+	"golang.org/x/crypto/scrypt"
 	"net/http"
 	"sync"
 	"time"
@@ -186,16 +192,18 @@ func (n *Ngpool) Miner() {
 			coinbase := job.getCoinbase(extraNonceMagic)
 			header := job.getBlockHeader(nonce, extraNonceMagic, coinbase)
 
-			var hasher = sha256d.New()
-			hasher.Write(header)
-			buf := hasher.Sum(nil)
-			blen := len(buf)
-			for i := 0; i < blen/2; i++ {
-				buf[i], buf[blen-1-i] = buf[blen-1-i], buf[i]
+			headerHsh, err := scrypt.Key(header, header, 1024, 1, 1, 32)
+			if err != nil {
+				log.WithError(err).Error("Failed scrypt hash")
+				panic(err)
 			}
-			blockHash.SetBytes(buf)
+			hashObj, err := chainhash.NewHash(headerHsh)
+			if err != nil {
+				log.WithError(err).Error("Failed conversion to hash")
+				panic(err)
+			}
 
-			if blockHash.Cmp(job.target) <= 0 {
+			if blockchain.HashToBig(hashObj).Cmp(job.target) <= 0 {
 				block := job.getBlock(header, coinbase)
 				log.Infof("Found a block! \n%x", block)
 				return
