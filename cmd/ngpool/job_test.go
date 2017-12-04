@@ -13,6 +13,7 @@ func TestTarget(t *testing.T) {
 	}{
 		{"01003456", big.NewInt(0)},
 		{"05009234", big.NewInt(0x92340000)},
+		{"02008000", big.NewInt(0x80)},
 	}
 	for _, test := range tests {
 		tmpl := BlockTemplate{Bits: test.enc}

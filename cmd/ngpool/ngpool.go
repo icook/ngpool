@@ -153,7 +153,7 @@ func (n *Ngpool) Miner() {
 		for {
 			jobOrig := <-listener
 			newJob, ok := jobOrig.(*Job)
-			if job == nil || !ok {
+			if newJob == nil || !ok {
 				log.Printf("%#v", jobOrig)
 				log.WithField("job", jobOrig).Warn("Bad job from broadcast")
 				continue
@@ -188,9 +188,14 @@ func (n *Ngpool) Miner() {
 
 			var hasher = sha256d.New()
 			hasher.Write(header)
-			blockHash.SetBytes(hasher.Sum(nil))
+			buf := hasher.Sum(nil)
+			blen := len(buf)
+			for i := 0; i < blen/2; i++ {
+				buf[i], buf[blen-1-i] = buf[blen-1-i], buf[i]
+			}
+			blockHash.SetBytes(buf)
 
-			if blockHash.Cmp(job.target) == -1 {
+			if blockHash.Cmp(job.target) <= 0 {
 				block := job.getBlock(header, coinbase)
 				log.Infof("Found a block! \n%x", block)
 				return

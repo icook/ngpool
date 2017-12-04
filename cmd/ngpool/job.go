@@ -194,6 +194,7 @@ func (j *Job) getBlockHeader(nonce []byte, extraNonce []byte, coinbase []byte) [
 	}
 
 	buf.Write(rootHash)
+	buf.Write(j.time)
 	buf.Write(j.bits)
 	buf.Write(nonce)
 
@@ -238,6 +239,7 @@ func NewJobFromTemplate(tmpl *BlockTemplate, config *ChainConfig) (*Job, error) 
 	if err != nil {
 		return nil, errors.Wrap(err, "Invalid bits")
 	}
+	reverseBytes(encodedBits)
 
 	transactions := [][]byte{}
 	for _, tx := range tmpl.Transactions {
