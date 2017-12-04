@@ -2,14 +2,19 @@ package main
 
 import (
 	"encoding/base64"
-	"fmt"
+	"encoding/binary"
+	"encoding/json"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/ngpool/pkg/service"
+	"github.com/mitchellh/mapstructure"
+	"github.com/pkg/errors"
 	"github.com/r3labs/sse"
+	"github.com/seehuhn/sha256d"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
+	"math/big"
 	"net/http"
 	"sync"
 	"time"
@@ -26,9 +31,9 @@ type Ngpool struct {
 	etcd               client.Client
 	etcdKeys           client.KeysAPI
 	coinserverWatchers map[string]*CoinserverWatcher
-	stratumPorts       map[int]*StratumServer
 	templateCast       map[TemplateKey]broadcast.Broadcaster
 	templateCastMtx    *sync.Mutex
+	jobCast            broadcast.Broadcaster
 }
 
 func NewNgpool() *Ngpool {
@@ -43,6 +48,7 @@ func NewNgpool() *Ngpool {
 		config:             config,
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
 		templateCast:       make(map[TemplateKey]broadcast.Broadcaster),
+		jobCast:            broadcast.NewBroadcaster(10),
 		templateCastMtx:    &sync.Mutex{},
 	}
 
@@ -62,14 +68,137 @@ func (n *Ngpool) Start(service *service.Service) {
 	if err != nil {
 		log.WithError(err).Fatal("Failed to start coinserver watcher")
 	}
+
 	go n.HandleCoinserverWatcherUpdates(updates)
 
-	// Start each of the configured ports
-	for port, _ := range n.config.GetStringMap("Ports") {
-		subConfig := n.config.Sub(fmt.Sprintf("Ports.%s", port))
-		ss := NewStratumServer(subConfig, n.getCurrencyCast)
-		ss.Start()
+	latestTemp := map[TemplateKey][]byte{}
+	latestTempMtx := sync.Mutex{}
+
+	var tmplKey TemplateKey
+	val := n.config.Get("BaseCurrency")
+	err = mapstructure.Decode(val, &tmplKey)
+	if err != nil {
+		log.WithError(err).Error("Invalid configuration, currencies of improper format")
+		return
 	}
+
+	go func() {
+		log.Infof("Registering listener for %+v", tmplKey)
+		listener := make(chan interface{})
+		broadcast := n.getCurrencyCast(tmplKey)
+		broadcast.Register(listener)
+		defer func() {
+			log.Debug("Closing template listener channel")
+			broadcast.Unregister(listener)
+			close(listener)
+		}()
+		for {
+			newTemplate := <-listener
+			template, ok := newTemplate.([]byte)
+			if !ok {
+				log.Errorf("Got invalid type from template listener: %#v", newTemplate)
+				continue
+			}
+			latestTempMtx.Lock()
+			latestTemp[tmplKey] = template
+			job, err := genJob(latestTemp)
+			log.Info("Generated new job, pushing...")
+			if err != nil {
+				log.WithError(err).Error("Error generating job")
+				continue
+			}
+			n.jobCast.Submit(job)
+			latestTempMtx.Unlock()
+		}
+	}()
+
+	go n.Miner()
+}
+
+func genJob(templates map[TemplateKey][]byte) (*Job, error) {
+	for tmplKey, tmplRaw := range templates {
+		if tmplKey.TemplateType != "getblocktemplate" {
+			log.WithField("type", tmplKey.TemplateType).Error("Unrecognized template type")
+			continue
+		}
+
+		var tmpl BlockTemplate
+		err := json.Unmarshal(tmplRaw, &tmpl)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Unable to deserialize template: %v", string(tmplRaw))
+		}
+
+		chainConfig, ok := CurrencyConfig[tmplKey.Currency]
+		if !ok {
+			return nil, errors.Wrapf(err, "No currency config for %s", tmplKey.Currency)
+		}
+
+		job, err := NewJobFromTemplate(&tmpl, chainConfig)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error generating job")
+		}
+		return job, nil
+	}
+	return nil, errors.New("Not sufficient templates to build job")
+}
+
+func (n *Ngpool) Miner() {
+	listener := make(chan interface{})
+	n.jobCast.Register(listener)
+	jobLock := sync.Mutex{}
+	var job *Job
+
+	// Watch for new jobs for us
+	go func() {
+		for {
+			jobOrig := <-listener
+			newJob, ok := jobOrig.(*Job)
+			if job == nil || !ok {
+				log.Printf("%#v", jobOrig)
+				log.WithField("job", jobOrig).Warn("Bad job from broadcast")
+				continue
+			}
+			jobLock.Lock()
+			job = newJob
+			jobLock.Unlock()
+		}
+	}()
+
+	go func() {
+		var (
+			blockHash = &big.Int{}
+		)
+
+		var i uint32 = 0
+		for {
+			if 1%1000 == 0 {
+				log.Info("1khash done")
+			}
+			if job == nil {
+				time.Sleep(time.Second * 1)
+				continue
+			}
+			jobLock.Lock()
+			var nonce = make([]byte, 4)
+			binary.BigEndian.PutUint32(nonce, i)
+
+			// Static extranonce
+			coinbase := job.getCoinbase(extraNonceMagic)
+			header := job.getBlockHeader(nonce, extraNonceMagic, coinbase)
+
+			var hasher = sha256d.New()
+			hasher.Write(header)
+			blockHash.SetBytes(hasher.Sum(nil))
+
+			if blockHash.Cmp(job.target) == -1 {
+				block := job.getBlock(header, coinbase)
+				log.Infof("Found a block! \n%x", block)
+				return
+			}
+			jobLock.Unlock()
+			i += 1
+		}
+	}()
 }
 
 func (n *Ngpool) Stop() {
