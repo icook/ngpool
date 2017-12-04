@@ -10,7 +10,7 @@
 [[projects]]
   branch = "master"
   name = "github.com/btcsuite/btcd"
-  packages = ["btcec","btcjson","chaincfg","chaincfg/chainhash","wire"]
+  packages = ["blockchain","btcec","btcjson","chaincfg","chaincfg/chainhash","database","txscript","wire"]
   revision = "2e60448ffcc6bf78332d1fe590260095f554dd78"
 
 [[projects]]
@@ -292,6 +292,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "056d969f8fc0061779cb4b6881ebb9d6d90d2237d6bd840072e9be1af55aec2b"
+  inputs-digest = "04b68312ed9db87b1c3fc349f8e6a252b9903890f937c3144d613d4243f05d8e"
   solver-name = "gps-cdcl"
   solver-version = 1
