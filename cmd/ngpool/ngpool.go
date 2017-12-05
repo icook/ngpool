@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"github.com/btcsuite/btcd/blockchain"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -39,7 +38,10 @@ type Ngpool struct {
 	coinserverWatchers map[string]*CoinserverWatcher
 	templateCast       map[TemplateKey]broadcast.Broadcaster
 	templateCastMtx    *sync.Mutex
-	jobCast            broadcast.Broadcaster
+	// Keyed by currency code
+	blockCast    map[string]broadcast.Broadcaster
+	blockCastMtx *sync.Mutex
+	jobCast      broadcast.Broadcaster
 }
 
 func NewNgpool() *Ngpool {
@@ -53,9 +55,12 @@ func NewNgpool() *Ngpool {
 	ng := &Ngpool{
 		config:             config,
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
-		templateCast:       make(map[TemplateKey]broadcast.Broadcaster),
-		jobCast:            broadcast.NewBroadcaster(10),
-		templateCastMtx:    &sync.Mutex{},
+
+		templateCast:    make(map[TemplateKey]broadcast.Broadcaster),
+		templateCastMtx: &sync.Mutex{},
+		blockCast:       make(map[string]broadcast.Broadcaster),
+		blockCastMtx:    &sync.Mutex{},
+		jobCast:         broadcast.NewBroadcaster(10),
 	}
 
 	return ng
@@ -91,7 +96,7 @@ func (n *Ngpool) Start(service *service.Service) {
 	go func() {
 		log.Infof("Registering listener for %+v", tmplKey)
 		listener := make(chan interface{})
-		broadcast := n.getCurrencyCast(tmplKey)
+		broadcast := n.getTemplateCast(tmplKey)
 		broadcast.Register(listener)
 		defer func() {
 			log.Debug("Closing template listener channel")
@@ -171,10 +176,6 @@ func (n *Ngpool) Miner() {
 	}()
 
 	go func() {
-		var (
-			blockHash = &big.Int{}
-		)
-
 		var i uint32 = 0
 		for {
 			if 1%1000 == 0 {
@@ -205,8 +206,8 @@ func (n *Ngpool) Miner() {
 
 			if blockchain.HashToBig(hashObj).Cmp(job.target) <= 0 {
 				block := job.getBlock(header, coinbase)
-				log.Infof("Found a block! \n%x", block)
-				return
+				n.blockCast[job.currencyConfig.Code].Submit(block)
+				time.Sleep(time.Millisecond * 100)
 			}
 			jobLock.Unlock()
 			i += 1
@@ -223,22 +224,79 @@ type CoinserverWatcher struct {
 	status       string
 	lastBlock    time.Time
 	currencyCast broadcast.Broadcaster
-	done         chan interface{}
+	blockCast    broadcast.Broadcaster
+	wg           sync.WaitGroup
+	shutdown     chan interface{}
 }
 
 func (cw *CoinserverWatcher) Stop() {
 	// Trigger the stopping of the watcher, and wait for complete shutdown (it
 	// will close channel 'done' on exit)
-	if cw.done == nil {
+	if cw.shutdown == nil {
 		return
 	}
-	cw.done <- ""
-	<-cw.done
+	close(cw.shutdown)
+	cw.wg.Wait()
 }
 
-func (cw *CoinserverWatcher) Run() {
-	cw.done = make(chan interface{})
-	defer close(cw.done)
+func (cw *CoinserverWatcher) Start() {
+	cw.wg = sync.WaitGroup{}
+	cw.shutdown = make(chan interface{})
+	go cw.RunTemplateBroadcaster()
+	go cw.RunBlockCastListener()
+}
+
+func (cw *CoinserverWatcher) RunBlockCastListener() {
+	cw.wg.Add(1)
+	defer cw.wg.Done()
+
+	connCfg := &rpcclient.ConnConfig{
+		Host:         cw.endpoint[7:] + "rpc",
+		User:         "",
+		Pass:         "",
+		HTTPPostMode: true, // Bitcoin core only supports HTTP POST mode
+		DisableTLS:   true, // Bitcoin core does not provide TLS by default
+	}
+	client, err := rpcclient.New(connCfg, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	listener := make(chan interface{})
+	cw.blockCast.Register(listener)
+	defer func() {
+		log.Debug("Closing template listener channel")
+		cw.blockCast.Unregister(listener)
+		close(listener)
+	}()
+	for {
+		msg := <-listener
+		newBlock := msg.([]byte)
+		if err != nil {
+			log.WithError(err).Error("Invalid type recieved from blockCast")
+			continue
+		}
+		blk, err := btcutil.NewBlockFromBytes(newBlock)
+		if err != nil {
+			log.WithError(err).Info("Error generating block")
+			continue
+		}
+		res := client.SubmitBlock(blk, &btcjson.SubmitBlockOptions{})
+		if err != nil {
+			log.WithError(err).Info("Error submitting block")
+		} else if res == nil {
+			log.Info("Found a block!")
+		} else if res.Error() == "inconclusive" {
+			log.Info("Found a block! (inconclusive)")
+		} else {
+			log.Info("Maybe found a block: ", res)
+		}
+	}
+}
+
+func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
+	cw.wg.Add(1)
+	defer cw.wg.Done()
 	client := &sse.Client{
 		URL:        cw.endpoint + "blocks",
 		Connection: &http.Client{},
@@ -254,7 +312,7 @@ func (cw *CoinserverWatcher) Run() {
 			}
 			cw.status = "down"
 			select {
-			case <-cw.done:
+			case <-cw.shutdown:
 				return
 			case <-time.After(time.Second * 2):
 			}
@@ -266,7 +324,7 @@ func (cw *CoinserverWatcher) Run() {
 		for {
 			// Wait for new event or exit signal
 			select {
-			case <-cw.done:
+			case <-cw.shutdown:
 				return
 			case msg := <-events:
 				// When the connection breaks we get a nill pointer. Break out
@@ -314,19 +372,21 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 		case "added":
 			labels := update.Status.Labels
 			// TODO: Should probably serialize to datatype...
-			currencyCast := n.getCurrencyCast(TemplateKey{
+			currencyCast := n.getTemplateCast(TemplateKey{
 				Currency:     labels["currency"].(string),
 				Algo:         labels["algo"].(string),
 				TemplateType: labels["template_type"].(string),
 			})
+			blockCast := n.getBlockCast(labels["currency"].(string))
 			cw := &CoinserverWatcher{
 				endpoint:     labels["endpoint"].(string),
 				status:       "starting",
 				currencyCast: currencyCast,
+				blockCast:    blockCast,
 				id:           update.ServiceID,
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
-			go cw.Run()
+			cw.Start()
 			log.Infof("New coinserver detected: %s %+v", update.ServiceID, update.Status)
 		default:
 			log.Warn("Unrecognized action from service watcher ", update.Action)
@@ -334,11 +394,20 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 	}
 }
 
-func (n *Ngpool) getCurrencyCast(key TemplateKey) broadcast.Broadcaster {
+func (n *Ngpool) getTemplateCast(key TemplateKey) broadcast.Broadcaster {
 	n.templateCastMtx.Lock()
 	if _, ok := n.templateCast[key]; !ok {
 		n.templateCast[key] = broadcast.NewBroadcaster(10)
 	}
 	n.templateCastMtx.Unlock()
 	return n.templateCast[key]
+}
+
+func (n *Ngpool) getBlockCast(key string) broadcast.Broadcaster {
+	n.blockCastMtx.Lock()
+	if _, ok := n.blockCast[key]; !ok {
+		n.blockCast[key] = broadcast.NewBroadcaster(10)
+	}
+	n.blockCastMtx.Unlock()
+	return n.blockCast[key]
 }

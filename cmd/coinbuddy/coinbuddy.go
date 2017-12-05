@@ -76,6 +76,37 @@ func (c *CoinBuddy) Run() {
 func (c *CoinBuddy) RunEventListener() {
 	c.eventListener = gin.Default()
 	gin.SetMode("release")
+	c.eventListener.POST("/rpc", func(ctx *gin.Context) {
+		type RPCReq struct {
+			Method string
+			Params []json.RawMessage
+			ID     int
+		}
+		var req RPCReq
+		ctx.BindJSON(&req)
+		log.Infof("%#v", req)
+		res, err := c.cs.client.RawRequest(req.Method, req.Params)
+		if err != nil {
+			log.WithError(err).Warn("error from rpc proxy")
+			if jerr, ok := err.(*btcjson.RPCError); ok {
+				ctx.JSON(500, gin.H{
+					"result": nil,
+					"error": map[string]interface{}{
+						"code":    jerr.Code,
+						"message": jerr.Message,
+					}, "id": req.ID})
+			} else {
+				ctx.JSON(500, gin.H{
+					"result": nil,
+					"error": map[string]interface{}{
+						"code":    -1000,
+						"message": "Proxy error",
+					}, "id": req.ID})
+			}
+			return
+		}
+		ctx.JSON(500, gin.H{"result": res, "error": nil, "id": req.ID})
+	})
 	c.eventListener.GET("/blocks", func(ctx *gin.Context) {
 		listener := make(chan interface{})
 		c.broadcast.Register(listener)

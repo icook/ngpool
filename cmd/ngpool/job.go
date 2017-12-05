@@ -156,15 +156,16 @@ func (b *BlockTemplate) createCoinbase(chainConfig *ChainConfig) ([]byte, []byte
 }
 
 type Job struct {
-	bits          []byte
-	time          []byte
-	version       []byte
-	prevBlockHash []byte
-	coinbase1     []byte
-	coinbase2     []byte
-	merkleBranch  [][]byte
-	target        *big.Int
-	transactions  [][]byte
+	currencyConfig *ChainConfig
+	bits           []byte
+	time           []byte
+	version        []byte
+	prevBlockHash  []byte
+	coinbase1      []byte
+	coinbase2      []byte
+	merkleBranch   [][]byte
+	target         *big.Int
+	transactions   [][]byte
 }
 
 func (j *Job) getCoinbase(extraNonce []byte) []byte {
@@ -251,15 +252,16 @@ func NewJobFromTemplate(tmpl *BlockTemplate, config *ChainConfig) (*Job, error) 
 	}
 
 	job := &Job{
-		transactions:  transactions,
-		bits:          encodedBits,
-		time:          encodedTime,
-		version:       encodedVersion,
-		prevBlockHash: encodedPrevBlockHash,
-		coinbase1:     coinbase1,
-		coinbase2:     coinbase2,
-		target:        target,
-		merkleBranch:  tmpl.merkleBranch(),
+		currencyConfig: config,
+		transactions:   transactions,
+		bits:           encodedBits,
+		time:           encodedTime,
+		version:        encodedVersion,
+		prevBlockHash:  encodedPrevBlockHash,
+		coinbase1:      coinbase1,
+		coinbase2:      coinbase2,
+		target:         target,
+		merkleBranch:   tmpl.merkleBranch(),
 	}
 	return job, nil
 }
