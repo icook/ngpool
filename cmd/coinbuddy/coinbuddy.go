@@ -117,7 +117,6 @@ func (c *CoinBuddy) RunEventListener() {
 		}
 		var req RPCReq
 		ctx.BindJSON(&req)
-		log.Infof("%#v", req)
 		res, err := c.cs.client.RawRequest(req.Method, req.Params)
 		if err != nil {
 			log.WithError(err).Warn("error from rpc proxy")
@@ -138,7 +137,7 @@ func (c *CoinBuddy) RunEventListener() {
 			}
 			return
 		}
-		ctx.JSON(500, gin.H{"result": res, "error": nil, "id": req.ID})
+		ctx.JSON(200, gin.H{"result": res, "error": nil, "id": req.ID})
 	})
 	c.eventListener.GET("/blocks", func(ctx *gin.Context) {
 		listener := make(chan interface{})
