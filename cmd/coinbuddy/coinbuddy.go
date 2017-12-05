@@ -19,24 +19,27 @@ import (
 )
 
 type CoinBuddy struct {
-	config        *viper.Viper
-	cs            *Coinserver
-	blockListener *http.Server
-	eventListener *gin.Engine
-	lastBlock     json.RawMessage
-	lastBlockMtx  sync.RWMutex
-	broadcast     broadcast.Broadcaster
+	config         *viper.Viper
+	cs             *Coinserver
+	blockListener  *http.Server
+	eventListener  *gin.Engine
+	lastBlock      json.RawMessage
+	lastBlockMtx   sync.RWMutex
+	broadcast      broadcast.Broadcaster
+	templateExtras []byte
 }
 
 func NewCoinBuddy() *CoinBuddy {
 	config := viper.New()
 
+	config.SetDefault("CoinserverBinary", "bitcoind")
+	config.SetDefault("TemplateType", "getblocktemplate")
+	config.SetDefault("CurrencyCode", "BTC")
+	config.SetDefault("HashingAlgo", "sha256d")
+
 	config.SetDefault("LogLevel", "info")
 	config.SetDefault("BlockListenerBind", "127.0.0.1:3000")
 	config.SetDefault("EventListenerBind", "127.0.0.1:4000")
-	config.SetDefault("CurrencyCode", "BTC")
-	config.SetDefault("HashingAlgo", "sha256d")
-	config.SetDefault("CoinserverBinary", "bitcoind")
 	config.SetDefault("NodeConfig.rpcuser", "admin1")
 	config.SetDefault("NodeConfig.rpcpassword", "123")
 	config.SetDefault("NodeConfig.port", "19000")
@@ -69,8 +72,38 @@ func (c *CoinBuddy) Run() {
 	if err != nil {
 		log.WithError(err).Fatal("Coinserver never came up for 90 seconds")
 	}
+	c.generateTemplateExtras()
 	c.RunBlockListener()
 	c.RunEventListener()
+}
+
+func (c *CoinBuddy) generateTemplateExtras() {
+	// We assemble a byte string of extra data to put in the getblocktemplate
+	// call currently used to inject chainid for aux networks, since this is
+	// the only missing value from GBT to generate aux blocks
+	templateExtras := map[string]interface{}{}
+	if c.config.GetString("TemplateType") == "getblocktemplate_aux" {
+		params := []json.RawMessage{}
+		resp, err := c.cs.client.RawRequest("getauxblock", params)
+		if err != nil {
+			log.WithError(err).Fatal(
+				"Failed to run getauxblock, are you sure this coin is merge mineable?")
+		}
+		var auxWork map[string]interface{}
+		err = json.Unmarshal(resp, &auxWork)
+		if err != nil {
+			log.WithError(err).Fatal("Failed to deserialize getauxblock")
+		}
+		templateExtras["chainid"] = auxWork["chainid"]
+	}
+	serialized, err := json.Marshal(templateExtras)
+	if err != nil {
+		log.WithError(err).Fatal("Error serializing templateExtras")
+	}
+	c.templateExtras = []byte{}
+	c.templateExtras = append(c.templateExtras, []byte(",\"extras\":")...)
+	c.templateExtras = append(c.templateExtras, serialized...)
+	c.templateExtras = append(c.templateExtras, '}')
 }
 
 func (c *CoinBuddy) RunEventListener() {
@@ -153,6 +186,7 @@ func (c *CoinBuddy) RunBlockListener() {
 			return err
 		} else {
 			log.Info("Got new block template from client")
+			template = append(template[:len(template)-1], c.templateExtras...)
 			c.lastBlockMtx.Lock()
 			c.lastBlock = template
 			c.lastBlockMtx.Unlock()

@@ -24,7 +24,7 @@ func init() {
 			"algo":          cb.config.GetString("HashingAlgo"),
 			"currency":      cb.config.GetString("CurrencyCode"),
 			"endpoint":      fmt.Sprintf("http://%s/", cb.config.GetString("EventListenerBind")),
-			"template_type": "getblocktemplate",
+			"template_type": cb.config.GetString("TemplateType"),
 		}
 	}
 	s := service.NewService("coinserver", cb.config, getAttributes)
