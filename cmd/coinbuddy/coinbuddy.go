@@ -107,8 +107,8 @@ func (c *CoinBuddy) generateTemplateExtras() {
 }
 
 func (c *CoinBuddy) RunEventListener() {
-	c.eventListener = gin.Default()
 	gin.SetMode("release")
+	c.eventListener = gin.Default()
 	c.eventListener.POST("/rpc", func(ctx *gin.Context) {
 		type RPCReq struct {
 			Method string
