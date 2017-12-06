@@ -18,7 +18,7 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	ng := NewNgpool()
+	ng := NewStratumServer()
 	getAttributes := func() map[string]interface{} {
 		return map[string]interface{}{}
 	}

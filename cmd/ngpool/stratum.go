@@ -26,7 +26,7 @@ type TemplateKey struct {
 	TemplateType string
 }
 
-type Ngpool struct {
+type StratumServer struct {
 	config             *viper.Viper
 	etcd               client.Client
 	etcdKeys           client.KeysAPI
@@ -41,7 +41,7 @@ type Ngpool struct {
 	latestTempMtx sync.Mutex
 }
 
-func NewNgpool() *Ngpool {
+func NewStratumServer() *StratumServer {
 	config := viper.New()
 
 	config.SetDefault("LogLevel", "info")
@@ -49,7 +49,7 @@ func NewNgpool() *Ngpool {
 	// Load from Env so we can access etcd
 	config.AutomaticEnv()
 
-	ng := &Ngpool{
+	ng := &StratumServer{
 		config:             config,
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
 
@@ -65,7 +65,7 @@ func NewNgpool() *Ngpool {
 	return ng
 }
 
-func (n *Ngpool) Start(service *service.Service) {
+func (n *StratumServer) Start(service *service.Service) {
 	levelConfig := n.config.GetString("LogLevel")
 	level, err := log.ParseLevel(levelConfig)
 	if err != nil {
@@ -104,7 +104,7 @@ func (n *Ngpool) Start(service *service.Service) {
 	go n.Miner()
 }
 
-func (n *Ngpool) listenTemplate(tmplKey TemplateKey) {
+func (n *StratumServer) listenTemplate(tmplKey TemplateKey) {
 	log.Infof("Registering listener for %+v", tmplKey)
 	listener := make(chan interface{})
 	broadcast := n.getTemplateCast(tmplKey)
@@ -136,7 +136,7 @@ func (n *Ngpool) listenTemplate(tmplKey TemplateKey) {
 	}
 }
 
-func (n *Ngpool) Miner() {
+func (n *StratumServer) Miner() {
 	listener := make(chan interface{})
 	n.jobCast.Register(listener)
 	jobLock := sync.Mutex{}
@@ -194,7 +194,7 @@ func (n *Ngpool) Miner() {
 	}()
 }
 
-func (n *Ngpool) Stop() {
+func (n *StratumServer) Stop() {
 }
 
 type CoinserverWatcher struct {
@@ -340,7 +340,7 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 	}
 }
 
-func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStatusUpdate) {
+func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.ServiceStatusUpdate) {
 	log.Infof("Listening for new coinserver services")
 	for {
 		update := <-updates
@@ -379,7 +379,7 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 	}
 }
 
-func (n *Ngpool) getTemplateCast(key TemplateKey) broadcast.Broadcaster {
+func (n *StratumServer) getTemplateCast(key TemplateKey) broadcast.Broadcaster {
 	n.templateCastMtx.Lock()
 	if _, ok := n.templateCast[key]; !ok {
 		n.templateCast[key] = broadcast.NewBroadcaster(10)
@@ -388,7 +388,7 @@ func (n *Ngpool) getTemplateCast(key TemplateKey) broadcast.Broadcaster {
 	return n.templateCast[key]
 }
 
-func (n *Ngpool) getBlockCast(key string) broadcast.Broadcaster {
+func (n *StratumServer) getBlockCast(key string) broadcast.Broadcaster {
 	n.blockCastMtx.Lock()
 	if _, ok := n.blockCast[key]; !ok {
 		n.blockCast[key] = broadcast.NewBroadcaster(10)
