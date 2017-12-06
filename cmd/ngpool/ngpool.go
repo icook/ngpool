@@ -156,12 +156,19 @@ func (n *Ngpool) Miner() {
 			jobLock.Unlock()
 		}
 	}()
-
 	go func() {
 		var i uint32 = 0
+		last := time.Now()
+		lasti := i
 		for {
-			if 1%1000 == 0 {
-				log.Info("1khash done")
+			if i%10000 == 0 {
+				t := time.Now()
+				dur := t.Sub(last)
+				if dur > (time.Second * 15) {
+					log.Infof("Hashrate: %.f hps", float64(i-lasti)/dur.Seconds())
+					lasti = i
+					last = t
+				}
 			}
 			if job == nil {
 				time.Sleep(time.Second * 1)
