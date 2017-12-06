@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -155,7 +156,7 @@ func (b *BlockTemplate) createCoinbase(chainConfig *ChainConfig) ([]byte, []byte
 	return parts[0], parts[1], nil
 }
 
-type Job struct {
+type MainChainJob struct {
 	currencyConfig *ChainConfig
 	bits           []byte
 	time           []byte
@@ -167,8 +168,84 @@ type Job struct {
 	target         *big.Int
 	transactions   [][]byte
 }
+type AuxChainJob struct {
+	currencyConfig *ChainConfig
+}
 
-func (j *Job) getCoinbase(extraNonce []byte) []byte {
+type Job struct {
+	MainChainJob
+	auxChains []*AuxChainJob
+}
+
+func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
+	var (
+		mainJobSet bool
+	)
+	job := Job{}
+	for tmplKey, tmplRaw := range templates {
+		var tmpl BlockTemplate
+		err := json.Unmarshal(tmplRaw, &tmpl)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Unable to deserialize template: %v", string(tmplRaw))
+		}
+		chainConfig, ok := CurrencyConfig[tmplKey.Currency]
+		if !ok {
+			return nil, errors.Errorf("No currency config for %s", tmplKey.Currency)
+		}
+
+		switch tmplKey.TemplateType {
+		case "getblocktemplate_aux":
+			auxChainJob, err := NewAuxChainJob(&tmpl, chainConfig)
+			if err != nil {
+				return nil, err
+			}
+			job.auxChains = append(job.auxChains, auxChainJob)
+		case "getblocktemplate":
+			if mainJobSet {
+				return nil, errors.Errorf("You can only have one base currency template")
+			}
+			mainJobSet = true
+			mainChainJob, err := NewMainChainJob(&tmpl, chainConfig)
+			if err != nil {
+				return nil, err
+			}
+			job.MainChainJob = *mainChainJob
+		default:
+			return nil, errors.Errorf("Unrecognized TemplateType %s", tmplKey.TemplateType)
+		}
+	}
+	if !mainJobSet {
+		return nil, errors.New("Must have a main chain template")
+	}
+	return &job, nil
+}
+
+func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string][]byte, bool, error) {
+	var ret = map[string][]byte{}
+	var validShare = false
+
+	coinbase := j.getCoinbase(extraNonce)
+	header := j.GetBlockHeader(nonce, extraNonce)
+	headerHsh, err := j.currencyConfig.PoWHash(header)
+	if err != nil {
+		return nil, false, err
+	}
+	hashObj, err := chainhash.NewHash(headerHsh)
+	if err != nil {
+		return nil, false, err
+	}
+	bigHsh := blockchain.HashToBig(hashObj)
+	if shareTarget != nil && bigHsh.Cmp(shareTarget) <= 0 {
+		validShare = true
+	}
+
+	if bigHsh.Cmp(j.target) <= 0 {
+		ret[j.currencyConfig.Code] = j.GetBlock(header, coinbase)
+	}
+	return ret, validShare, nil
+}
+
+func (j *MainChainJob) getCoinbase(extraNonce []byte) []byte {
 	coinbase := bytes.Buffer{}
 	coinbase.Write(j.coinbase1)
 	coinbase.Write(extraNonce)
@@ -176,7 +253,7 @@ func (j *Job) getCoinbase(extraNonce []byte) []byte {
 	return coinbase.Bytes()
 }
 
-func (j *Job) getBlockHeader(nonce []byte, extraNonce []byte, coinbase []byte) []byte {
+func (j *MainChainJob) GetBlockHeader(nonce []byte, coinbase []byte) []byte {
 	var hasher = sha256d.New()
 	buf := bytes.Buffer{}
 	buf.Write(j.version)
@@ -202,7 +279,7 @@ func (j *Job) getBlockHeader(nonce []byte, extraNonce []byte, coinbase []byte) [
 	return buf.Bytes()
 }
 
-func (j *Job) getBlock(header []byte, coinbase []byte) []byte {
+func (j *MainChainJob) GetBlock(header []byte, coinbase []byte) []byte {
 	block := bytes.Buffer{}
 	block.Write(header)
 	wire.WriteVarInt(&block, 0, uint64(len(j.transactions)+1))
@@ -214,7 +291,12 @@ func (j *Job) getBlock(header []byte, coinbase []byte) []byte {
 	return block.Bytes()
 }
 
-func NewJobFromTemplate(tmpl *BlockTemplate, config *ChainConfig) (*Job, error) {
+func NewAuxChainJob(mainTemplate *BlockTemplate, config *ChainConfig) (*AuxChainJob, error) {
+	acj := &AuxChainJob{}
+	return acj, nil
+}
+
+func NewMainChainJob(tmpl *BlockTemplate, config *ChainConfig) (*MainChainJob, error) {
 	coinbase1, coinbase2, err := tmpl.createCoinbase(config)
 	if err != nil {
 		return nil, errors.Wrap(err, "Unable to create coinbase")
@@ -251,7 +333,7 @@ func NewJobFromTemplate(tmpl *BlockTemplate, config *ChainConfig) (*Job, error) 
 		transactions = append(transactions, decoded)
 	}
 
-	job := &Job{
+	job := &MainChainJob{
 		currencyConfig: config,
 		transactions:   transactions,
 		bits:           encodedBits,

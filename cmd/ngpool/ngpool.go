@@ -3,23 +3,18 @@ package main
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
-	"github.com/btcsuite/btcd/blockchain"
 
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/btcd/rpcclient"
 	"github.com/icook/ngpool/pkg/service"
 	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
 	"github.com/r3labs/sse"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
-	"golang.org/x/crypto/scrypt"
 	"net/http"
 	"sync"
 	"time"
@@ -39,9 +34,11 @@ type Ngpool struct {
 	templateCast       map[TemplateKey]broadcast.Broadcaster
 	templateCastMtx    *sync.Mutex
 	// Keyed by currency code
-	blockCast    map[string]broadcast.Broadcaster
-	blockCastMtx *sync.Mutex
-	jobCast      broadcast.Broadcaster
+	blockCast     map[string]broadcast.Broadcaster
+	blockCastMtx  *sync.Mutex
+	jobCast       broadcast.Broadcaster
+	latestTemp    map[TemplateKey][]byte
+	latestTempMtx sync.Mutex
 }
 
 func NewNgpool() *Ngpool {
@@ -61,6 +58,8 @@ func NewNgpool() *Ngpool {
 		blockCast:       make(map[string]broadcast.Broadcaster),
 		blockCastMtx:    &sync.Mutex{},
 		jobCast:         broadcast.NewBroadcaster(10),
+		latestTemp:      map[TemplateKey][]byte{},
+		latestTempMtx:   sync.Mutex{},
 	}
 
 	return ng
@@ -82,75 +81,59 @@ func (n *Ngpool) Start(service *service.Service) {
 
 	go n.HandleCoinserverWatcherUpdates(updates)
 
-	latestTemp := map[TemplateKey][]byte{}
-	latestTempMtx := sync.Mutex{}
-
 	var tmplKey TemplateKey
 	val := n.config.Get("BaseCurrency")
 	err = mapstructure.Decode(val, &tmplKey)
 	if err != nil {
-		log.WithError(err).Error("Invalid configuration, currencies of improper format")
+		log.WithError(err).Error("Invalid configuration, 'BaseCurrency' of improper format")
 		return
 	}
+	go n.listenTemplate(tmplKey)
 
-	go func() {
-		log.Infof("Registering listener for %+v", tmplKey)
-		listener := make(chan interface{})
-		broadcast := n.getTemplateCast(tmplKey)
-		broadcast.Register(listener)
-		defer func() {
-			log.Debug("Closing template listener channel")
-			broadcast.Unregister(listener)
-			close(listener)
-		}()
-		for {
-			newTemplate := <-listener
-			template, ok := newTemplate.([]byte)
-			if !ok {
-				log.Errorf("Got invalid type from template listener: %#v", newTemplate)
-				continue
-			}
-			latestTempMtx.Lock()
-			latestTemp[tmplKey] = template
-			job, err := genJob(latestTemp)
-			log.Info("Generated new job, pushing...")
-			if err != nil {
-				log.WithError(err).Error("Error generating job")
-				continue
-			}
-			n.jobCast.Submit(job)
-			latestTempMtx.Unlock()
-		}
-	}()
+	var tmplKeys []TemplateKey
+	val = n.config.Get("AuxCurrencies")
+	err = mapstructure.Decode(val, &tmplKeys)
+	if err != nil {
+		log.WithError(err).Error("Invalid configuration, 'AuxCurrency' of improper format")
+		return
+	}
+	for _, tmplKey := range tmplKeys {
+		go n.listenTemplate(tmplKey)
+	}
 
 	go n.Miner()
 }
 
-func genJob(templates map[TemplateKey][]byte) (*Job, error) {
-	for tmplKey, tmplRaw := range templates {
-		if tmplKey.TemplateType != "getblocktemplate" {
-			log.WithField("type", tmplKey.TemplateType).Error("Unrecognized template type")
+func (n *Ngpool) listenTemplate(tmplKey TemplateKey) {
+	log.Infof("Registering listener for %+v", tmplKey)
+	listener := make(chan interface{})
+	broadcast := n.getTemplateCast(tmplKey)
+	broadcast.Register(listener)
+	defer func() {
+		log.Debug("Closing template listener channel")
+		broadcast.Unregister(listener)
+		close(listener)
+	}()
+	for {
+		newTemplate := <-listener
+		log.Infof("Got new template on %+v", tmplKey)
+		template, ok := newTemplate.([]byte)
+		if !ok {
+			log.Errorf("Got invalid type from template listener: %#v", newTemplate)
 			continue
 		}
-
-		var tmpl BlockTemplate
-		err := json.Unmarshal(tmplRaw, &tmpl)
+		n.latestTempMtx.Lock()
+		n.latestTemp[tmplKey] = template
+		job, err := NewJobFromTemplates(n.latestTemp)
 		if err != nil {
-			return nil, errors.Wrapf(err, "Unable to deserialize template: %v", string(tmplRaw))
+			log.WithError(err).Error("Error generating job")
+			n.latestTempMtx.Unlock()
+			continue
 		}
-
-		chainConfig, ok := CurrencyConfig[tmplKey.Currency]
-		if !ok {
-			return nil, errors.Wrapf(err, "No currency config for %s", tmplKey.Currency)
-		}
-
-		job, err := NewJobFromTemplate(&tmpl, chainConfig)
-		if err != nil {
-			return nil, errors.Wrap(err, "Error generating job")
-		}
-		return job, nil
+		log.Info("New job successfully generated, pushing...")
+		n.jobCast.Submit(job)
+		n.latestTempMtx.Unlock()
 	}
-	return nil, errors.New("Not sufficient templates to build job")
 }
 
 func (n *Ngpool) Miner() {
@@ -165,7 +148,6 @@ func (n *Ngpool) Miner() {
 			jobOrig := <-listener
 			newJob, ok := jobOrig.(*Job)
 			if newJob == nil || !ok {
-				log.Printf("%#v", jobOrig)
 				log.WithField("job", jobOrig).Warn("Bad job from broadcast")
 				continue
 			}
@@ -189,25 +171,15 @@ func (n *Ngpool) Miner() {
 			var nonce = make([]byte, 4)
 			binary.BigEndian.PutUint32(nonce, i)
 
-			// Static extranonce
-			coinbase := job.getCoinbase(extraNonceMagic)
-			header := job.getBlockHeader(nonce, extraNonceMagic, coinbase)
-
-			headerHsh, err := scrypt.Key(header, header, 1024, 1, 1, 32)
+			solves, _, err := job.CheckSolves(nonce, extraNonceMagic, nil)
 			if err != nil {
-				log.WithError(err).Error("Failed scrypt hash")
-				panic(err)
+				log.WithError(err).Warn("Failed to check solves for job")
 			}
-			hashObj, err := chainhash.NewHash(headerHsh)
-			if err != nil {
-				log.WithError(err).Error("Failed conversion to hash")
-				panic(err)
+			for currencyCode, block := range solves {
+				n.blockCast[currencyCode].Submit(block)
 			}
-
-			if blockchain.HashToBig(hashObj).Cmp(job.target) <= 0 {
-				block := job.getBlock(header, coinbase)
-				n.blockCast[job.currencyConfig.Code].Submit(block)
-				time.Sleep(time.Millisecond * 100)
+			if len(solves) > 0 {
+				time.Sleep(time.Millisecond * 200)
 			}
 			jobLock.Unlock()
 			i += 1
@@ -220,9 +192,9 @@ func (n *Ngpool) Stop() {
 
 type CoinserverWatcher struct {
 	id           string
+	tmplKey      TemplateKey
 	endpoint     string
 	status       string
-	lastBlock    time.Time
 	currencyCast broadcast.Broadcaster
 	blockCast    broadcast.Broadcaster
 	wg           sync.WaitGroup
@@ -308,7 +280,8 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 		err := client.SubscribeChan("messages", events)
 		if err != nil {
 			if cw.status != "down" {
-				log.WithError(err).Warnf("CoinserverWatcher %s is now DOWN", cw.id)
+				log.WithError(err).Warnf(
+					"CoinserverWatcher %s:%+v is now DOWN", cw.id, cw.tmplKey)
 			}
 			cw.status = "down"
 			select {
@@ -320,7 +293,8 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 		}
 		lastEvent := sse.Event{}
 		cw.status = "up"
-		log.Infof("CoinserverWatcher %s is now UP", cw.id)
+		log.Infof(
+			"CoinserverWatcher %s:%+v is now UP", cw.id, cw.tmplKey)
 		for {
 			// Wait for new event or exit signal
 			select {
@@ -348,6 +322,8 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 						cw.endpoint, lastEvent.Event, lastEvent.Data)
 					cw.currencyCast.Submit(lastEvent.Data)
 					if cw.status != "live" {
+						log.Infof(
+							"CoinserverWatcher %s:%+v is now LIVE", cw.id, cw.tmplKey)
 						log.Infof("CoinserverWatcher %s is now LIVE", cw.id)
 					}
 					cw.status = "live"
@@ -372,11 +348,12 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 		case "added":
 			labels := update.Status.Labels
 			// TODO: Should probably serialize to datatype...
-			currencyCast := n.getTemplateCast(TemplateKey{
+			tmplKey := TemplateKey{
 				Currency:     labels["currency"].(string),
 				Algo:         labels["algo"].(string),
 				TemplateType: labels["template_type"].(string),
-			})
+			}
+			currencyCast := n.getTemplateCast(tmplKey)
 			blockCast := n.getBlockCast(labels["currency"].(string))
 			cw := &CoinserverWatcher{
 				endpoint:     labels["endpoint"].(string),
@@ -384,6 +361,7 @@ func (n *Ngpool) HandleCoinserverWatcherUpdates(updates chan service.ServiceStat
 				currencyCast: currencyCast,
 				blockCast:    blockCast,
 				id:           update.ServiceID,
+				tmplKey:      tmplKey,
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
 			cw.Start()
