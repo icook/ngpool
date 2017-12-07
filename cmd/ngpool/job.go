@@ -115,7 +115,10 @@ func auxMerkleBranch(merkleBase [][]byte, followHash []byte) ([][]byte, uint32) 
 	return branch, bitMask
 }
 
-func (b *BlockTemplate) merkleRoot(coinbaseHash []byte) []byte {
+func (b *BlockTemplate) merkleRoot(coinbase []byte) []byte {
+	var hasher = sha256d.New()
+	hasher.Write(coinbase)
+	coinbaseHash := hasher.Sum(nil)
 	hashes := [][]byte{coinbaseHash}
 	for _, txn := range b.Transactions {
 		txID, err := hex.DecodeString(txn.getTxID())
@@ -251,9 +254,8 @@ type MainChainJob struct {
 	coinbase2      []byte
 	merkleBranch   [][]byte
 
-	target        *big.Int
-	transactions  [][]byte
-	coinbaseExtra []byte
+	target       *big.Int
+	transactions [][]byte
 }
 type AuxChainJob struct {
 	currencyConfig         *ChainConfig
@@ -475,7 +477,7 @@ func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob,
 	blkHeader := bytes.Buffer{}
 	encodedVersion := make([]byte, 4)
 	version := uint32(template.Version)
-	version |= (1 << 24)
+	version |= (1 << 8)
 	binary.LittleEndian.PutUint32(encodedVersion[0:], version)
 	blkHeader.Write(encodedVersion)
 
