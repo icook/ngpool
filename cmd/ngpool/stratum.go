@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcutil"
 	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/btcd/rpcclient"
@@ -71,9 +71,10 @@ func (n *StratumServer) Start(service *service.Service) {
 	if err != nil {
 		log.Crit("Unable to parse log level", "configval", levelConfig, "err", err)
 	}
-	log.Info("Set log level", "level", level)
-	handler := log.LvlFilterHandler(level, log.Root().GetHandler())
+	handler := log.CallerFileHandler(log.StdoutHandler)
+	handler = log.LvlFilterHandler(level, handler)
 	log.Root().SetHandler(handler)
+	log.Info("Set log level", "level", level)
 
 	updates, err := service.ServiceWatcher("coinserver")
 	if err != nil {
@@ -231,6 +232,7 @@ func (cw *CoinserverWatcher) Start() {
 func (cw *CoinserverWatcher) RunBlockCastListener() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
+	logger := log.New("id", cw.id)
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         cw.endpoint[7:] + "rpc",
@@ -247,7 +249,7 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 	listener := make(chan interface{})
 	cw.blockCast.Register(listener)
 	defer func() {
-		log.Debug("Closing template listener channel")
+		logger.Debug("Closing template listener channel")
 		cw.blockCast.Unregister(listener)
 		close(listener)
 	}()
@@ -255,23 +257,29 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 		msg := <-listener
 		newBlock := msg.([]byte)
 		if err != nil {
-			log.Error("Invalid type recieved from blockCast", "err", err)
+			logger.Error("Invalid type recieved from blockCast", "err", err)
 			continue
 		}
-		blk, err := btcutil.NewBlockFromBytes(newBlock)
+		hexString := hex.EncodeToString(newBlock)
+		encodedBlock, err := json.Marshal(hexString)
 		if err != nil {
-			log.Info("Error generating block", "err", err)
+			logger.Error("Failed to json marshal a string", "err", err)
 			continue
 		}
-		res := client.SubmitBlock(blk, &btcjson.SubmitBlockOptions{})
+		params := []json.RawMessage{
+			encodedBlock,
+			[]byte{'[', ']'},
+		}
+		rawResult, err := client.RawRequest("submitblock", params)
+		res := string(rawResult)
 		if err != nil {
-			log.Info("Error submitting block", "err", err)
-		} else if res == nil {
-			log.Info("Found a block!")
-		} else if res.Error() == "inconclusive" {
-			log.Info("Found a block! (inconclusive)")
+			logger.Info("Error submitting block", "err", err)
+		} else if res == "" {
+			logger.Info("Found a block!")
+		} else if res == "inconclusive" {
+			logger.Info("Found a block! (inconclusive)")
 		} else {
-			log.Info("Maybe found a block: ", res)
+			logger.Info("Maybe found a block", "resp", res)
 		}
 	}
 }
