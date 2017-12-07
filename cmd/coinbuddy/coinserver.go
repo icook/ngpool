@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"github.com/icook/btcd/rpcclient"
+	log "github.com/inconshreveable/log15"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"io"
 	"io/ioutil"
 	"os"
@@ -62,7 +62,7 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string, coinser
 	}
 	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
-		log.WithError(err).Fatal("Failed to initialize rpcclient")
+		log.Crit("Failed to initialize rpcclient", "err", err)
 	}
 	c.client = client
 
@@ -72,18 +72,18 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string, coinser
 func (c *Coinserver) Stop() bool {
 	proc, err := c.getProcess()
 	if err != nil {
-		log.WithError(err).Warn("Failed to lookup pid for process from pidfile")
+		log.Warn("Failed to lookup pid for process from pidfile", "err", err)
 		return false
 	}
 	err = c.signalExit(proc, time.Second*30)
 	if err != nil {
-		log.WithError(err).Warn("Failed graceful shutdown")
+		log.Warn("Failed graceful shutdown", "err", err)
 	} else {
 		return true
 	}
 	err = c.kill(proc)
 	if err != nil {
-		log.WithError(err).Warn("Unable to stop coinserver")
+		log.Warn("Unable to stop coinserver", "err", err)
 		return false
 	}
 	return true
@@ -111,7 +111,7 @@ func (c *Coinserver) signalExit(proc *os.Process, timeout time.Duration) error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to signal exit to coinserver")
 	}
-	log.WithField("pid", proc.Pid).Info("SIGINT to coinserver")
+	log.Info("SIGINT to coinserver", "pid", proc.Pid)
 	done := make(chan interface{}, 1)
 	go func() {
 		proc.Wait()
@@ -119,7 +119,7 @@ func (c *Coinserver) signalExit(proc *os.Process, timeout time.Duration) error {
 	}()
 	select {
 	case <-done:
-		log.WithField("time", time.Now().Sub(startShutdown)).Info("Coinserver shutdown complete")
+		log.Info("Coinserver shutdown complete", "time", time.Now().Sub(startShutdown))
 	case <-time.After(timeout):
 		return errors.Errorf("SIGINT timeout %v reached", timeout)
 	}
@@ -140,12 +140,12 @@ func (c *Coinserver) kill(proc *os.Process) error {
 }
 
 func (c *Coinserver) Run() error {
-	log.Debugf("Starting coinserver with command %s %v", c.command.Path, c.command.Args)
+	log.Debug("Starting coinserver", "bin", c.command.Path, "args", c.command.Args)
 	done := make(chan interface{}, 1)
 	buf := make([]byte, 2048)
 	stderr, err := c.command.StderrPipe()
 	if err != nil {
-		log.WithError(err).Error("Failed to read stderr of coinserver")
+		log.Error("Failed to read stderr of coinserver", "err", err)
 	}
 	go func() {
 		io.ReadFull(stderr, buf)
@@ -154,7 +154,7 @@ func (c *Coinserver) Run() error {
 	c.command.Start()
 	select {
 	case <-done:
-		log.Info("Coinserver exited with errors: ", string(buf))
+		log.Info("Coinserver exited early", "err", string(buf))
 		return errors.New("Coinserver exited early")
 	case <-time.After(time.Second * 2):
 	}
@@ -168,13 +168,12 @@ func (c *Coinserver) WaitUntilUp() error {
 	for ; i < tot; i++ {
 		ret, err := c.client.GetInfo()
 		if err == nil {
-			log.Infof("Coinserver up after %v", i/10)
-			log.Infof("\t-> getinfo=%+v", ret)
+			log.Info("Coinserver up", "time", i/10, "info", ret)
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 		if i%50 == 0 && i > 0 {
-			log.Infof("Coinserver not up yet after %d / %d seconds", i/10, tot/10)
+			log.Info("Coinserver not up yet", "elap", i/10, "total", tot/10)
 		}
 	}
 	return err

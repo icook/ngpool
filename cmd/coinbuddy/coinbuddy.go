@@ -8,7 +8,7 @@ import (
 	"github.com/dustin/go-broadcast"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/btcd/btcjson"
-	log "github.com/sirupsen/logrus"
+	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
 	"io"
@@ -61,16 +61,18 @@ func NewCoinBuddy() *CoinBuddy {
 
 func (c *CoinBuddy) Run() {
 	levelConfig := c.config.GetString("LogLevel")
-	level, err := log.ParseLevel(levelConfig)
+	level, err := log.LvlFromString(levelConfig)
 	if err != nil {
-		log.WithError(err).Fatal("Unable to parse log level %s", levelConfig)
+		log.Crit("Unable to parse log level", "configval", levelConfig, "err", err)
 	}
-	log.Info("Set log level to ", level)
-	log.SetLevel(level)
+	handler := log.CallerFileHandler(log.StdoutHandler)
+	handler = log.LvlFilterHandler(level, handler)
+	log.Root().SetHandler(handler)
+	log.Info("Set log level", "level", level)
 
 	err = c.RunCoinserver()
 	if err != nil {
-		log.WithError(err).Fatal("Coinserver never came up for 90 seconds")
+		log.Crit("Coinserver never came up for 90 seconds", "err", err)
 	}
 	c.generateTemplateExtras()
 	c.RunBlockListener()
@@ -86,19 +88,19 @@ func (c *CoinBuddy) generateTemplateExtras() {
 		params := []json.RawMessage{}
 		resp, err := c.cs.client.RawRequest("getauxblock", params)
 		if err != nil {
-			log.WithError(err).Fatal(
-				"Failed to run getauxblock, are you sure this coin is merge mineable?")
+			log.Crit("Failed to run getauxblock, are you sure this coin is merge mineable?",
+				"err", err)
 		}
 		var auxWork map[string]interface{}
 		err = json.Unmarshal(resp, &auxWork)
 		if err != nil {
-			log.WithError(err).Fatal("Failed to deserialize getauxblock")
+			log.Crit("Failed to deserialize getauxblock", "err", err)
 		}
 		templateExtras["chainid"] = auxWork["chainid"]
 	}
 	serialized, err := json.Marshal(templateExtras)
 	if err != nil {
-		log.WithError(err).Fatal("Error serializing templateExtras")
+		log.Crit("Error serializing templateExtras", "err", err)
 	}
 	c.templateExtras = []byte{}
 	c.templateExtras = append(c.templateExtras, []byte(",\"extras\":")...)
@@ -119,7 +121,7 @@ func (c *CoinBuddy) RunEventListener() {
 		ctx.BindJSON(&req)
 		res, err := c.cs.client.RawRequest(req.Method, req.Params)
 		if err != nil {
-			log.WithError(err).Warn("error from rpc proxy")
+			log.Warn("error from rpc proxy", "err", err)
 			if jerr, ok := err.(*btcjson.RPCError); ok {
 				ctx.JSON(500, gin.H{
 					"result": nil,
@@ -167,7 +169,7 @@ func (c *CoinBuddy) RunEventListener() {
 
 	go c.eventListener.Run(c.config.GetString("EventListenerBind"))
 	endpoint := fmt.Sprintf("http://%s/blocks", c.config.GetString("EventListenerBind"))
-	log.WithField("endpoint", endpoint).Infof("Listening for SSE subscriptions")
+	log.Info("Listening for SSE subscriptions", "endpoint", endpoint)
 }
 
 func (c *CoinBuddy) RunBlockListener() {
@@ -178,9 +180,9 @@ func (c *CoinBuddy) RunBlockListener() {
 		params := []json.RawMessage{}
 		template, err := c.cs.client.RawRequest("getblocktemplate", params)
 		if err != nil {
-			log.WithError(err).Error("Failed to get block template")
+			log.Error("Failed to get block template", "err", err)
 			if jerr, ok := err.(*btcjson.RPCError); ok {
-				log.Infof("got rpc code %v from server", jerr.Code)
+				log.Info("got rpc error from server", "code", jerr.Code)
 			}
 			return err
 		} else {
@@ -195,7 +197,7 @@ func (c *CoinBuddy) RunBlockListener() {
 	}
 	http.HandleFunc("/notif", func(w http.ResponseWriter, r *http.Request) {
 		bid := r.URL.Query().Get("id")
-		log.Infof("Got notif about new block ID=%s from server", bid)
+		log.Info("Got notif about new block from server", "hash", bid)
 		err := updateBlock()
 		if err != nil {
 			w.WriteHeader(http.StatusExpectationFailed)
@@ -206,11 +208,11 @@ func (c *CoinBuddy) RunBlockListener() {
 	go func() {
 		if err := c.blockListener.ListenAndServe(); err != nil {
 			// cannot panic, because this probably is an intentional close
-			log.Infof("Httpserver: ListenAndServe() error: %s", err)
+			log.Info("Httpserver: ListenAndServe()", "err", err)
 		}
 	}()
 	endpoint := fmt.Sprintf("http://%s/notif", c.config.GetString("BlockListenerBind"))
-	log.WithField("endpoint", endpoint).Info("Listening for new block notifications")
+	log.Info("Listening for new block notifications", "endpoint", endpoint)
 
 	// Loop and try to get an initial block template every few seconds
 	go func() {
@@ -238,7 +240,7 @@ func (c *CoinBuddy) RunCoinserver() error {
 
 	err := c.cs.Run()
 	if err != nil {
-		log.WithError(err).Fatal("Failed to start coinserver")
+		log.Crit("Failed to start coinserver", "err", err)
 	}
 	return c.cs.WaitUntilUp()
 }

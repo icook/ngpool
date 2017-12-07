@@ -9,9 +9,9 @@ import (
 	"github.com/fatih/color"
 	"strings"
 	//	"github.com/satori/go.uuid.git"
+	log "github.com/inconshreveable/log15"
 	"github.com/satori/go.uuid"
 	"github.com/sergi/go-diff/diffmatchpatch"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
@@ -59,13 +59,13 @@ func NewService(namespace string, config *viper.Viper, getLabels func() map[stri
 	s.SetServiceID(s.config.GetString("ServiceID"))
 	s.config.SetDefault("EtcdEndpoint", []string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
 
-	log.Infof("Loaded service ID %s, pulling config from etcd", s.serviceID)
+	log.Info("Loaded service, pulling config from etcd", "service", s.serviceID)
 	keyPath := "/config/" + s.namespace + "/" + s.serviceID
 	s.config.AddRemoteProvider("etcd", s.config.GetStringSlice("EtcdEndpoint")[0], keyPath)
 	s.config.SetConfigType("yaml")
 	err := s.config.ReadRemoteConfig()
 	if err != nil {
-		log.WithError(err).WithField("keypath", keyPath).Warn("Unable to load from etcd")
+		log.Warn("Unable to load from etcd", "err", err, "keypath", keyPath)
 	}
 
 	cfg := client.Config{
@@ -76,7 +76,7 @@ func NewService(namespace string, config *viper.Viper, getLabels func() map[stri
 	}
 	etcd, err := client.New(cfg)
 	if err != nil {
-		log.Fatal(err)
+		log.Crit("Failed to make etcd client", "err", err)
 	}
 	s.etcd = etcd
 	s.etcdKeys = client.NewKeysAPI(s.etcd)
@@ -111,9 +111,10 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 		Recursive: true,
 	}
 	res, err := s.etcdKeys.Get(context.Background(), watchStatusKeypath, getOpt)
+	log.Info("test", "err", err)
 	// If service key doesn't exist, create it so watcher can start
 	if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeKeyNotFound {
-		log.Infof("Creating empty '%s' dir in etcd", watchStatusKeypath)
+		log.Info("Creating empty dir in etcd", "dir", watchStatusKeypath)
 		_, err := s.etcdKeys.Set(context.Background(), watchStatusKeypath,
 			"", &client.SetOptions{Dir: true})
 		if err != nil {
@@ -144,7 +145,7 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 		for {
 			res, err = watcher.Next(context.Background())
 			if err != nil {
-				log.WithError(err).Warn("Error from coinserver watcher")
+				log.Warn("Error from coinserver watcher", "err", err)
 				time.Sleep(time.Second * 2)
 				continue
 			}
@@ -176,7 +177,7 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 
 			// A little sloppy, but more DRY
 			if action != "" {
-				log.Debugf("Broadcasting service update %s : %s", action, serviceID)
+				log.Debug("Broadcasting service update", "action", action, "id", serviceID)
 				updates <- ServiceStatusUpdate{
 					ServiceType: watchNamespace,
 					ServiceID:   serviceID,
@@ -209,7 +210,7 @@ func (s *Service) KeepAlive() error {
 		valueRaw, err := json.Marshal(valueMap)
 		value := string(valueRaw)
 		if err != nil {
-			log.WithError(err).Error("Failed serialization of status update")
+			log.Error("Failed serialization of status update", "err", err)
 			continue
 		}
 
@@ -227,7 +228,7 @@ func (s *Service) KeepAlive() error {
 		_, err = s.etcdKeys.Set(
 			context.Background(), "/status/"+s.namespace+"/"+serviceID, value, opt)
 		if err != nil {
-			log.WithError(err).Warn("Failed to update etcd status entry")
+			log.Warn("Failed to update etcd status entry", "err", err)
 			continue
 		}
 	}
@@ -237,7 +238,7 @@ func (s *Service) KeepAlive() error {
 func (s *Service) getDefaultConfig() string {
 	b, err := yaml.Marshal(s.config.AllSettings())
 	if err != nil {
-		log.WithError(err).Fatal("Failed to serialize config")
+		log.Crit("Failed to serialize config", "err", err)
 	}
 	return string(b)
 }
@@ -246,7 +247,7 @@ func (s *Service) editFile(fpath string) string {
 	// Launch editor with our tmp file
 	editorPath, err := exec.LookPath(s.editor)
 	if err != nil {
-		log.WithError(err).Fatalf("Failed to lookup path for '%s'", s.editor)
+		log.Crit("Failed editor path lookup", "err", err, "editor", s.editor)
 	}
 	cmd := exec.Command(editorPath, fpath)
 	cmd.Stdin = os.Stdin
@@ -254,7 +255,7 @@ func (s *Service) editFile(fpath string) string {
 	cmd.Stderr = os.Stderr
 	err = cmd.Start()
 	if err != nil {
-		log.WithError(err).Fatal("Failed to start editor")
+		log.Crit("Failed to start editor", "err", err)
 	}
 	err = cmd.Wait()
 
@@ -262,7 +263,7 @@ func (s *Service) editFile(fpath string) string {
 	newConfigByte, err := ioutil.ReadFile(fpath)
 	newConfig := string(newConfigByte)
 	if err != nil {
-		log.WithError(err).Fatal("Somehow we fail to read a file we just made...")
+		log.Crit("Somehow we fail to read a file we just made...", "err", err)
 	}
 	return newConfig
 }
@@ -274,11 +275,12 @@ func (s *Service) mktmp(contents string) *os.File {
 	fpath := filepath.Join(os.TempDir(), fname)
 	tmpFile, err := os.OpenFile(fpath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 	if os.IsExist(err) {
-		log.WithError(err).WithField("fname", fname).Fatal("Failed to make file, maybe another editor is open now?")
+		log.Crit("Failed to make file, maybe another editor is open now?",
+			"fname", fname, "err", err)
 	}
 	_, err = tmpFile.WriteString(contents)
 	if err != nil {
-		log.WithError(err).Fatal("Failed to write tmp file")
+		log.Crit("Failed to write tmp file", "err", err)
 	}
 	tmpFile.Close()
 	return tmpFile
@@ -302,9 +304,9 @@ func (s *Service) modifyLoop(currentVal string) {
 				_, err := s.etcdKeys.Set(
 					context.Background(), s.configKeyPath, newConfig, nil)
 				if err != nil {
-					log.WithError(err).Fatal("Failed pushing config")
+					log.Crit("Failed pushing config", "err", err)
 				}
-				log.Infof("Successfully pushed to %s", s.configKeyPath)
+				log.Info("Successfully pushed config", "keypath", s.configKeyPath)
 				return
 			} else if input == "e" {
 				break
@@ -325,7 +327,7 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 			configResp, err := s.etcdKeys.Get(context.Background(), s.configKeyPath, nil)
 			var currentConfig string = ""
 			if err != nil {
-				log.WithError(err).Info("Failed fetching config")
+				log.Warn("Failed fetching config", "err", err)
 				reader := bufio.NewReader(os.Stdin)
 				fmt.Print("Load default config? (y,n,q) ")
 				text, _ := reader.ReadString('\n')
@@ -350,14 +352,14 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 			fileInput, err := ioutil.ReadFile(fileName)
 			serviceID := s.config.GetString("ServiceID")
 			if serviceID == "" {
-				log.Fatal("Cannot push config to etcd without a ServiceID (hint: export SERVICEID=veryuniquestring")
+				log.Crit("Cannot push config to etcd without a ServiceID (hint: export SERVICEID=veryuniquestring")
 			}
 			_, err = s.etcdKeys.Set(
 				context.Background(), "/config/"+s.namespace+"/"+serviceID, string(fileInput), nil)
 			if err != nil {
-				log.WithError(err).Fatal("Failed pushing config")
+				log.Crit("Failed pushing config", "err", err)
 			}
-			log.Infof("Successfully pushed '%s' to /config/%s/%s", fileName, s.namespace, serviceID)
+			log.Info("Successfully pushed", "fname", fileName, "namespace", s.namespace, "id", serviceID)
 		}}
 	loadconfigCmd.Flags().StringVarP(&fileName, "config", "c", "", "the config to load")
 
@@ -390,7 +392,7 @@ func (s *Service) SetupCmds(rootCmd *cobra.Command) {
 			}
 			res, err := s.etcdKeys.Get(context.Background(), "/config/"+s.namespace, getOpt)
 			if err != nil {
-				log.WithError(err).Fatal("Unable to contact etcd")
+				log.Crit("Unable to contact etcd", "err", err)
 			}
 			for _, node := range res.Node.Nodes {
 				lbi := strings.LastIndexByte(node.Key, '/') + 1

@@ -10,9 +10,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	log "github.com/inconshreveable/log15"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
-	log "github.com/sirupsen/logrus"
 	"math/big"
 )
 
@@ -82,7 +82,7 @@ func (b *BlockTemplate) merkleBranch() [][]byte {
 	for _, txn := range b.Transactions {
 		txID, err := hex.DecodeString(txn.getTxID())
 		if err != nil {
-			log.WithError(err).Warn("Invalid txid from gbt")
+			log.Warn("Invalid txid from gbt", "err", err)
 		}
 		reverseBytes(txID)
 		hashes = append(hashes, txID)
