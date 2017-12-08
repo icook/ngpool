@@ -11,8 +11,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/fatih/color"
-	log "github.com/inconshreveable/log15"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
 )
@@ -65,7 +63,6 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
 		return nil, errors.New("Must have a main chain template")
 	}
 
-	log.Info(color.RedString("Generating aux datastructs *****"), "auxnets", len(job.auxChains))
 	// Build the merge mining merkle tree
 	var merkleSize = 1
 	var merkleBase [][]byte
@@ -75,14 +72,12 @@ MerkleLoop:
 		// A candidate for the size of our blockchain merkle tree. If it fails
 		// we iterate
 		merkleBase = make([][]byte, merkleSize)
-		log.Info("Merkle size attempt", "sz", merkleSize)
 		for _, mj := range job.auxChains {
 			var slot uint32 = merkleNonce
 			slot = slot*1103515245 + 12345
 			slot += uint32(mj.chainID)
 			slot = slot*1103515245 + 12345
 			slotNum := slot % uint32(merkleSize)
-			log.Info("iter", "slotNum", slotNum, "slot", slot)
 			if merkleBase[slotNum] != nil {
 				merkleSize *= 2
 				continue MerkleLoop
@@ -92,37 +87,29 @@ MerkleLoop:
 		break
 	}
 
-	log.Info("Dumping blockchain merkle base")
 	spew.Dump(merkleBase)
 	for _, mj := range job.auxChains {
 		branch, mask := auxMerkleBranch(merkleBase, mj.headerHash.CloneBytes())
-		log.Info("Dumping blockchain merkle branch, mask", "coin", mj.currencyConfig.Code)
-		spew.Dump(branch)
-		spew.Dump(mask)
 		mj.blockchainMerkleBranch = branch
 		mj.blockchainMerkleMask = mask
 	}
 
 	mmCoinbase := bytes.Buffer{}
 	if len(job.auxChains) > 0 {
-		log.Info("Building merge mining coinbase script addition")
 		mmCoinbase.Write([]byte{0xfa, 0xbe, 'm', 'm'})
 		if len(job.auxChains) > 1 {
 			merkleRoot := merkleRoot(merkleBase)
 			reverseBytes(merkleRoot)
-			log.Info("Injecting merkle root of blockchain tree", "root", hex.EncodeToString(merkleRoot))
 			mmCoinbase.Write(merkleRoot)
 		} else {
 			mj := job.auxChains[0]
 			merkleRoot := mj.headerHash.CloneBytes()
 			reverseBytes(merkleRoot)
-			log.Info("Injecting merkle root", "root", hex.EncodeToString(merkleRoot))
 			mmCoinbase.Write(merkleRoot)
 		}
 		// Merkle size
 		encodedMerkleSize := make([]byte, 4)
 		binary.LittleEndian.PutUint32(encodedMerkleSize[0:], uint32(merkleSize))
-		log.Info("Injecting merkle size", "enc", hex.EncodeToString(encodedMerkleSize), "sz", merkleSize)
 		mmCoinbase.Write(encodedMerkleSize)
 		// Nonce
 		encodedNonce := make([]byte, 4)
@@ -130,7 +117,6 @@ MerkleLoop:
 		mmCoinbase.Write(encodedNonce)
 	}
 
-	log.Info("Dumping Merge Mining coinbase script addition")
 	spew.Dump(mmCoinbase.Bytes())
 	coinbase1, coinbase2, err := mainJobTemplate.createCoinbaseSplit(job.currencyConfig, mmCoinbase.Bytes())
 	if err != nil {
@@ -144,7 +130,6 @@ MerkleLoop:
 func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string][]byte, bool, error) {
 	var ret = map[string][]byte{}
 	var validShare = false
-	log.Info(color.RedString("Job::CheckSolves"))
 
 	coinbase := bytes.Buffer{}
 	coinbase.Write(j.coinbase1)
@@ -152,7 +137,6 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	coinbase.Write(j.coinbase2)
 	header := j.GetBlockHeader(nonce, coinbase.Bytes())
 	headerHsh, err := j.currencyConfig.PoWHash(header)
-	log.Info("PoW Hash", "hsh", hex.EncodeToString(headerHsh))
 	if err != nil {
 		return nil, false, err
 	}
@@ -248,7 +232,6 @@ func (j *MainChainJob) GetBlockHeader(nonce []byte, coinbase []byte) []byte {
 	hasher.Write(coinbase)
 	rootHash := hasher.Sum(nil)
 	hasher.Reset()
-	log.Info("parent block coinbase", "hash", hex.EncodeToString(rootHash))
 
 	for _, branch := range j.merkleBranch {
 		hasher.Write(rootHash)
@@ -258,7 +241,6 @@ func (j *MainChainJob) GetBlockHeader(nonce []byte, coinbase []byte) []byte {
 	}
 
 	buf.Write(rootHash)
-	log.Info("parent block merkle root", "hash", hex.EncodeToString(rootHash))
 	buf.Write(j.time)
 	buf.Write(j.bits)
 	buf.Write(nonce)
@@ -291,7 +273,6 @@ type AuxChainJob struct {
 }
 
 func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob, error) {
-	log.Info(color.RedString("NewAuxChainJob"))
 	target, err := template.getTarget()
 	if err != nil {
 		return nil, errors.Wrap(err, "Error generating target")
@@ -320,7 +301,6 @@ func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob,
 	}
 	merkleRoot := template.merkleRoot(coinbase)
 	blkHeader.Write(merkleRoot)
-	log.Info("auxpow block merkleroot", "hsh", hex.EncodeToString(merkleRoot))
 
 	encodedTime := make([]byte, 4)
 	binary.LittleEndian.PutUint32(encodedTime[0:], uint32(template.CurTime))
@@ -366,39 +346,29 @@ func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob,
 	return acj, nil
 }
 func (j *AuxChainJob) GetBlock(coinbase []byte, parentHash []byte, coinbaseBranch [][]byte, parentHeader []byte) []byte {
-	log.Info(color.RedString("AuxChainJob::GetBlock"))
 	block := bytes.Buffer{}
 	block.Write(j.blockHeader)
 	block.Write(coinbase)
-	log.Info("dumping coinbase_txn to link parent PoW (prove inclusion of hash)")
-	spew.Dump(coinbase)
 	block.Write(parentHash)
 	// Coinbase merkle branch
-	log.Info("writing coinbase branch", "len", len(coinbaseBranch))
 	wire.WriteVarInt(&block, 0, uint64(len(coinbaseBranch)))
 	for i, branch := range coinbaseBranch {
-		log.Info("\tbranch", "i", i, "hash", hex.EncodeToString(branch))
 		block.Write(branch)
 	}
 	// Coinbase branch mask is always all zeros (right, right, right...)
 	block.Write([]byte{0, 0, 0, 0})
 
 	// Blockchain merkle branch
-	log.Info("writing blockchain branch", "len", len(j.blockchainMerkleBranch))
 	wire.WriteVarInt(&block, 0, uint64(len(j.blockchainMerkleBranch)))
 	for i, branch := range j.blockchainMerkleBranch {
-		log.Info("\tbranch", "i", i, "hash", hex.EncodeToString(branch))
 		block.Write(branch)
 	}
 	// Coinbase branch mask is always all zeros (right, right, right...)
 	encodedMask := make([]byte, 4)
 	binary.LittleEndian.PutUint32(encodedMask, j.blockchainMerkleMask)
 	block.Write(encodedMask)
-	log.Info("writing bit mask", "mask", encodedMask)
 
 	block.Write(parentHeader)
-	log.Info("dumping parent block header")
-	spew.Dump(parentHeader)
 	wire.WriteVarInt(&block, 0, uint64(len(j.transactions)+1))
 	block.Write(j.coinbase)
 
