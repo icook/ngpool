@@ -15,6 +15,7 @@ import (
 	"github.com/r3labs/sse"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -45,7 +46,9 @@ func NewStratumServer() *StratumServer {
 	config := viper.New()
 
 	config.SetDefault("LogLevel", "info")
+	config.SetDefault("EnableCpuminer", false)
 	config.SetDefault("Ports", []string{})
+	config.SetDefault("StratumBind", "127.0.0.1:3333")
 	// Load from Env so we can access etcd
 	config.AutomaticEnv()
 
@@ -103,7 +106,11 @@ func (n *StratumServer) Start(service *service.Service) {
 		go n.listenTemplate(tmplKey)
 	}
 
-	go n.Miner()
+	if n.config.GetBool("EnableCpuminer") {
+		go n.Miner()
+	}
+
+	go n.ListenMiners()
 }
 
 func (n *StratumServer) listenTemplate(tmplKey TemplateKey) {
@@ -232,7 +239,7 @@ func (cw *CoinserverWatcher) Start() {
 func (cw *CoinserverWatcher) RunBlockCastListener() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
-	logger := log.New("id", cw.id[:8], "coin", cw.tmplKey.Currency)
+	logger := log.New("coin", cw.tmplKey.Currency, "id", cw.id[:8])
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         cw.endpoint[7:] + "rpc",
@@ -347,6 +354,25 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 	}
 }
 
+func (n *StratumServer) ListenMiners() {
+	endpoint := n.config.GetString("StratumBind")
+	listener, err := net.Listen("tcp", endpoint)
+	if err != nil {
+		log.Crit("Failed to listen stratum", "err", err)
+	}
+	log.Info("Listening stratum", "endpoint", endpoint)
+	defer listener.Close()
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Warn("Failed to accept connection", "err", err)
+			continue
+		}
+		c := NewClient(conn)
+		c.Start()
+	}
+}
+
 func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.ServiceStatusUpdate) {
 	log.Info("Listening for new coinserver services")
 	for {
@@ -379,7 +405,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.Serv
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
 			cw.Start()
-			log.Info("New coinserver detected", "id", update.ServiceID[:8], "tmplKey", tmplKey)
+			log.Debug("New coinserver detected", "id", update.ServiceID[:8], "tmplKey", tmplKey)
 		default:
 			log.Warn("Unrecognized action from service watcher", "action", update.Action)
 		}

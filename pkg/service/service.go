@@ -111,7 +111,6 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 		Recursive: true,
 	}
 	res, err := s.etcdKeys.Get(context.Background(), watchStatusKeypath, getOpt)
-	log.Info("test", "err", err)
 	// If service key doesn't exist, create it so watcher can start
 	if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeKeyNotFound {
 		log.Info("Creating empty dir in etcd", "dir", watchStatusKeypath)
