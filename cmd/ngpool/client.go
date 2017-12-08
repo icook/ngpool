@@ -4,25 +4,32 @@ import (
 	"bufio"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/davecgh/go-spew/spew"
 	log "github.com/inconshreveable/log15"
 	_ "github.com/spf13/viper/remote"
+	"io"
 	"math/rand"
 	"net"
 )
 
 type StratumClient struct {
-	conn  net.Conn
-	attrs map[string]string
-	log   log.Logger
-	id    string
+	attrs      map[string]string
+	username   string
+	id         string
+	subscribed bool
+
+	log    log.Logger
+	conn   net.Conn
+	reader *bufio.Reader
+	writer *bufio.Writer
 }
 
 func NewClient(conn net.Conn) *StratumClient {
 	sc := &StratumClient{
-		conn:  conn,
-		id:    randomString(),
-		attrs: map[string]string{},
+		conn:   conn,
+		id:     randomString(),
+		attrs:  map[string]string{},
+		reader: bufio.NewReader(conn),
+		writer: bufio.NewWriter(conn),
 	}
 	sc.log = log.New("clientid", sc.id)
 	return sc
@@ -33,50 +40,73 @@ func (c *StratumClient) Start() {
 }
 
 func (c *StratumClient) rwLoop() {
-	reader := bufio.NewReader(c.conn)
-	writer := bufio.NewWriter(c.conn)
 	for {
-		raw, err := reader.ReadBytes('\n')
+		raw, err := c.reader.ReadBytes('\n')
+		if err == io.EOF {
+			c.log.Debug("Closed connection")
+			return
+		}
 		if err != nil {
 			c.log.Warn("Error reading", "err", err)
+			c.sendError(-1, StratumErrorOther)
 			return
 		}
 		var msg StratumMessage
 		err = json.Unmarshal(raw, &msg)
 		if err != nil {
 			c.log.Warn("Error unmarshaling", "err", err)
+			c.sendError(-1, StratumErrorOther)
 			continue
 		}
-		spew.Dump(msg)
-		c.log.Info("Recieved")
+		c.log.Debug("Recieve", "msg", msg)
 		switch msg.Method {
 		case "mining.subscribe":
-			if len(msg.Params) > 0 {
-				userAgent, ok := msg.Params[0].(string)
-				if ok {
-					c.attrs["useragent"] = userAgent
-					log.Debug("Client sent UserAgent", "agent", userAgent)
-				}
+			if c.subscribed {
+				c.sendError(-1, StratumErrorOther)
+				continue
 			}
+			ms := DecodeMiningSubscribe(msg.Params)
+			if ms.UserAgent != "" {
+				c.attrs["useragent"] = ms.UserAgent
+				log.Debug("Client sent UserAgent", "agent", ms.UserAgent)
+			}
+			// We don't store these for now, no resume functionality is
+			// provided. Effectively these are junk
 			diffSub := randomString()
 			notifySub := randomString()
-			respObj := StratumResponse{
+			err = c.send(&StratumResponse{
 				ID: msg.ID,
 				Result: []interface{}{
-					[]interface{}{"mining.set_difficulty", diffSub},
-					[]interface{}{"mining.notify", notifySub},
-				}}
-			resp, err := json.Marshal(respObj)
+					[]interface{}{
+						[]interface{}{"mining.set_difficulty", diffSub},
+						[]interface{}{"mining.notify", notifySub},
+					},
+					c.id, // A per connection extranonce to ensure they're iterating different attempts from peers
+					4,    // extranonce2 size (the one they iterate)
+				}})
 			if err != nil {
-				c.log.Error("Failed to serialize reply", "err", err)
+				c.log.Error("Failed write response", "err", err)
 				return
 			}
-			resp = append(resp, '\n')
-			c.log.Debug("Sending response", "resp", respObj)
-			writer.Write(resp)
-			err = writer.Flush()
+			c.subscribed = true
+		case "mining.authorize":
+			if !c.subscribed {
+				c.sendError(-1, StratumErrorNotSubbed)
+				continue
+			}
+			ma, err := DecodeMiningAuthorize(msg.Params)
 			if err != nil {
-				c.log.Error("Failed to serialize reply", "err", err)
+				c.sendError(-1, StratumErrorOther)
+				continue
+			}
+			// We ignore passwords
+			c.username = ma.Username
+			err = c.send(&StratumResponse{
+				ID:     msg.ID,
+				Result: true,
+			})
+			if err != nil {
+				c.log.Error("Failed write response", "err", err)
 				return
 			}
 		default:
@@ -85,22 +115,27 @@ func (c *StratumClient) rwLoop() {
 	}
 }
 
-type StratumError struct {
-	Code int
-	Desc string
-	TB   *string
+func (c *StratumClient) sendError(id int64, code int) error {
+	return c.send(&StratumResponse{
+		ID:     id,
+		Result: nil,
+		Error:  stratumErrors[code],
+	})
 }
 
-type StratumResponse struct {
-	ID     int64
-	Result []interface{}
-	Error  *StratumError
-}
-
-type StratumMessage struct {
-	ID     int64
-	Method string
-	Params []interface{}
+func (c *StratumClient) send(respObj *StratumResponse) error {
+	resp, err := json.Marshal(respObj)
+	if err != nil {
+		return err
+	}
+	resp = append(resp, '\n')
+	c.log.Debug("Sending response", "resp", respObj)
+	c.writer.Write(resp)
+	err = c.writer.Flush()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func randomString() string {
