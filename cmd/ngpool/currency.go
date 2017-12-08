@@ -72,4 +72,14 @@ func init() {
 			PrivateKeyID:     0xf1,
 			Net:              0xfabfb5da,
 		})
+	NewChainConfig(
+		"BTM_T",
+		"nZgyAMoJ9viU4qnE1gnUvxUxQZdQ8YbB9E",
+		"nZgyAMoJ9viU4qnE1gnUvxUxQZdQ8YbB9E",
+		scryptHash,
+		&chaincfg.Params{
+			PubKeyHashAddrID: 0x71,
+			PrivateKeyID:     0xf1,
+			Net:              0xfabfb5de,
+		})
 }

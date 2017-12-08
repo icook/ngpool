@@ -190,7 +190,7 @@ func (n *StratumServer) Miner() {
 				n.blockCast[currencyCode].Submit(block)
 			}
 			if len(solves) > 0 {
-				time.Sleep(time.Millisecond * 200)
+				time.Sleep(time.Second * 10)
 			}
 			jobLock.Unlock()
 			i += 1
