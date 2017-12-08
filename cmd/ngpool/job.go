@@ -69,6 +69,7 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
 	// Build the merge mining merkle tree
 	var merkleSize = 1
 	var merkleBase [][]byte
+	var merkleNonce uint32 = 0
 MerkleLoop:
 	for {
 		// A candidate for the size of our blockchain merkle tree. If it fails
@@ -76,11 +77,12 @@ MerkleLoop:
 		merkleBase = make([][]byte, merkleSize)
 		log.Info("Merkle size attempt", "sz", merkleSize)
 		for _, mj := range job.auxChains {
-			var slot int = 0
+			var slot uint32 = merkleNonce
 			slot = slot*1103515245 + 12345
-			slot += mj.chainID
+			slot += uint32(mj.chainID)
 			slot = slot*1103515245 + 12345
-			slotNum := slot % merkleSize
+			slotNum := slot % uint32(merkleSize)
+			log.Info("iter", "slotNum", slotNum, "slot", slot)
 			if merkleBase[slotNum] != nil {
 				merkleSize *= 2
 				continue MerkleLoop
@@ -123,7 +125,9 @@ MerkleLoop:
 		log.Info("Injecting merkle size", "enc", hex.EncodeToString(encodedMerkleSize), "sz", merkleSize)
 		mmCoinbase.Write(encodedMerkleSize)
 		// Nonce
-		mmCoinbase.Write([]byte{0, 0, 0, 0})
+		encodedNonce := make([]byte, 4)
+		binary.LittleEndian.PutUint32(encodedNonce, uint32(merkleNonce))
+		mmCoinbase.Write(encodedNonce)
 	}
 
 	log.Info("Dumping Merge Mining coinbase script addition")
