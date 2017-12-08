@@ -125,7 +125,7 @@ MerkleLoop:
 }
 
 func (j *Job) GetStratumParams() ([]interface{}, error) {
-	var mb []string
+	var mb = []string{}
 	for _, b := range j.merkleBranch {
 		mb = append(mb, hex.EncodeToString(b))
 	}

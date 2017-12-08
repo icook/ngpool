@@ -29,16 +29,15 @@ var stratumErrors = map[int]*StratumError{
 }
 
 type StratumResponse struct {
-	ID     *int64      `json:"id"`
+	ID     int64       `json:"id"`
 	Result interface{} `json:"result"`
-	Method string      `json:"method,omitempty"`
 	Error  interface{} `json:"error"`
 }
 
 type StratumMessage struct {
-	ID     int64
-	Method string
-	Params []interface{}
+	ID     *int64      `json:"id"`
+	Method string      `json:"method"`
+	Params interface{} `json:"params"`
 }
 
 // Decoded params portions
@@ -46,7 +45,11 @@ type MiningSubscribe struct {
 	UserAgent string
 }
 
-func DecodeMiningSubscribe(params []interface{}) *MiningSubscribe {
+func DecodeMiningSubscribe(raw interface{}) *MiningSubscribe {
+	params, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
 	ms := MiningSubscribe{}
 	if len(params) > 0 {
 		if userAgent, ok := params[0].(string); ok {
@@ -61,7 +64,11 @@ type MiningAuthorize struct {
 	Password string
 }
 
-func DecodeMiningAuthorize(params []interface{}) (*MiningAuthorize, error) {
+func DecodeMiningAuthorize(raw interface{}) (*MiningAuthorize, error) {
+	params, ok := raw.([]interface{})
+	if !ok {
+		return nil, errors.New("Non array passed")
+	}
 	ma := MiningAuthorize{}
 	if len(params) != 2 {
 		return nil, errors.New("Authorize must provider two string fields")
