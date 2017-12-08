@@ -124,6 +124,23 @@ MerkleLoop:
 	return &job, nil
 }
 
+func (j *Job) GetStratumParams() ([]interface{}, error) {
+	var mb []string
+	for _, b := range j.merkleBranch {
+		mb = append(mb, hex.EncodeToString(b))
+	}
+	return []interface{}{
+		hex.EncodeToString(j.prevBlockHash),
+		hex.EncodeToString(j.coinbase1),
+		hex.EncodeToString(j.coinbase2),
+		mb,
+		hex.EncodeToString(j.version),
+		hex.EncodeToString(j.bits),
+		hex.EncodeToString(j.time),
+		j.cleanJobs,
+	}, nil
+}
+
 func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string][]byte, bool, error) {
 	var ret = map[string][]byte{}
 	var validShare = false
@@ -171,6 +188,8 @@ type MainChainJob struct {
 
 	target       *big.Int
 	transactions [][]byte
+
+	cleanJobs bool
 }
 
 func NewMainChainJob(tmpl *BlockTemplate, config *ChainConfig) (*MainChainJob, error) {
@@ -215,6 +234,7 @@ func NewMainChainJob(tmpl *BlockTemplate, config *ChainConfig) (*MainChainJob, e
 		prevBlockHash:  encodedPrevBlockHash,
 		target:         target,
 		merkleBranch:   tmpl.merkleBranch(),
+		cleanJobs:      true, // TODO: change me
 	}
 	return job, nil
 }

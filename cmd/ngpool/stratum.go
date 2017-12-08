@@ -39,7 +39,11 @@ type StratumServer struct {
 
 	coinserverWatchers map[string]*CoinserverWatcher
 	newTemplate        chan *Template
+	jobSubscribe       chan chan interface{}
 	jobCast            broadcast.Broadcaster
+
+	lastJob    *Job
+	lastJobMtx *sync.Mutex
 
 	// Keyed by currency code
 	blockCast    map[string]broadcast.Broadcaster
@@ -61,8 +65,10 @@ func NewStratumServer() *StratumServer {
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
 
 		newTemplate:  make(chan *Template),
+		jobSubscribe: make(chan chan interface{}),
 		blockCast:    make(map[string]broadcast.Broadcaster),
 		blockCastMtx: &sync.Mutex{},
+		lastJobMtx:   &sync.Mutex{},
 		jobCast:      broadcast.NewBroadcaster(10),
 	}
 
@@ -109,6 +115,19 @@ func (n *StratumServer) Start(service *service.Service) {
 		go n.Miner()
 	}
 	go n.ListenMiners()
+	go n.ListenSubscribers()
+}
+
+func (n *StratumServer) ListenSubscribers() {
+	for {
+		listener := <-n.jobSubscribe
+		n.lastJobMtx.Lock()
+		if n.lastJob != nil {
+			listener <- n.lastJob
+		}
+		n.lastJobMtx.Unlock()
+		n.jobCast.Register(listener)
+	}
 }
 
 func (n *StratumServer) listenTemplates() {
@@ -126,6 +145,9 @@ func (n *StratumServer) listenTemplates() {
 			continue
 		}
 		log.Info("New job generated, pushing...")
+		n.lastJobMtx.Lock()
+		n.lastJob = job
+		n.lastJobMtx.Unlock()
 		n.jobCast.Submit(job)
 	}
 }
@@ -355,7 +377,7 @@ func (n *StratumServer) ListenMiners() {
 			log.Warn("Failed to accept connection", "err", err)
 			continue
 		}
-		c := NewClient(conn)
+		c := NewClient(conn, n.jobSubscribe)
 		c.Start()
 	}
 }

@@ -17,31 +17,97 @@ type StratumClient struct {
 	id         string
 	subscribed bool
 
-	log    log.Logger
-	conn   net.Conn
-	reader *bufio.Reader
-	writer *bufio.Writer
+	write        chan []byte
+	jobSubscribe chan chan interface{}
+	log          log.Logger
+	conn         net.Conn
 }
 
-func NewClient(conn net.Conn) *StratumClient {
+func NewClient(conn net.Conn, jobSubscribe chan chan interface{}) *StratumClient {
 	sc := &StratumClient{
-		conn:   conn,
-		id:     randomString(),
-		attrs:  map[string]string{},
-		reader: bufio.NewReader(conn),
-		writer: bufio.NewWriter(conn),
+		subscribed:   false,
+		conn:         conn,
+		id:           randomString(),
+		attrs:        map[string]string{},
+		jobSubscribe: jobSubscribe,
+		write:        make(chan []byte),
 	}
 	sc.log = log.New("clientid", sc.id)
 	return sc
 }
 
-func (c *StratumClient) Start() {
-	go c.rwLoop()
+func (c *StratumClient) Stop() {
+	c.log.Info("Stop")
+	err := c.conn.Close()
+	if err != nil {
+		c.log.Warn("Error closing", "err", err)
+	}
 }
 
-func (c *StratumClient) rwLoop() {
+func (c *StratumClient) Start() {
+	go c.readLoop()
+	go c.writeLoop()
+}
+
+func (c *StratumClient) listenJobs() {
+	jobBook := map[string]*Job{}
+	jobListener := make(chan interface{})
+	c.jobSubscribe <- jobListener
+	c.log.Debug("Subscribed to jobListener")
 	for {
-		raw, err := c.reader.ReadBytes('\n')
+		raw := <-jobListener
+		if raw == nil {
+			c.log.Debug("Closing job listener")
+			return
+		}
+		newJob, ok := raw.(*Job)
+		if !ok {
+			c.log.Warn("Bad job from broadcast", "job", raw)
+			continue
+		}
+		jid := randomString()
+		jobBook[jid] = newJob
+
+		params, err := newJob.GetStratumParams()
+		if err != nil {
+			c.log.Error("Failed to get stratum params", "err", err)
+			continue
+		}
+		params = append([]interface{}{jid}, params...)
+
+		err = c.send(&StratumResponse{
+			Method: "mining.notify",
+			Result: params,
+		})
+		if err != nil {
+			c.log.Error("Failed write response", "err", err)
+			return
+		}
+	}
+}
+
+func (c *StratumClient) writeLoop() {
+	defer c.Stop()
+
+	writer := bufio.NewWriter(c.conn)
+	var resp []byte
+	for {
+		resp = <-c.write
+		writer.Write(resp)
+		err := writer.Flush()
+		if err != nil {
+			c.log.Debug("Error writing", "err", err)
+			return
+		}
+	}
+
+}
+func (c *StratumClient) readLoop() {
+	defer c.Stop()
+
+	reader := bufio.NewReader(c.conn)
+	for {
+		raw, err := reader.ReadBytes('\n')
 		if err == io.EOF {
 			c.log.Debug("Closed connection")
 			return
@@ -75,7 +141,7 @@ func (c *StratumClient) rwLoop() {
 			diffSub := randomString()
 			notifySub := randomString()
 			err = c.send(&StratumResponse{
-				ID: msg.ID,
+				ID: &msg.ID,
 				Result: []interface{}{
 					[]interface{}{
 						[]interface{}{"mining.set_difficulty", diffSub},
@@ -102,13 +168,14 @@ func (c *StratumClient) rwLoop() {
 			// We ignore passwords
 			c.username = ma.Username
 			err = c.send(&StratumResponse{
-				ID:     msg.ID,
+				ID:     &msg.ID,
 				Result: true,
 			})
 			if err != nil {
 				c.log.Error("Failed write response", "err", err)
 				return
 			}
+			go c.listenJobs()
 		default:
 			c.log.Warn("Invalid message method", "method", msg.Method)
 		}
@@ -116,11 +183,13 @@ func (c *StratumClient) rwLoop() {
 }
 
 func (c *StratumClient) sendError(id int64, code int) error {
-	return c.send(&StratumResponse{
-		ID:     id,
+	err := stratumErrors[code]
+	resp := &StratumResponse{
+		ID:     &id,
 		Result: nil,
-		Error:  stratumErrors[code],
-	})
+		Error:  []interface{}{err.Code, err.Desc, err.TB},
+	}
+	return c.send(resp)
 }
 
 func (c *StratumClient) send(respObj *StratumResponse) error {
@@ -130,11 +199,7 @@ func (c *StratumClient) send(respObj *StratumResponse) error {
 	}
 	resp = append(resp, '\n')
 	c.log.Debug("Sending response", "resp", respObj)
-	c.writer.Write(resp)
-	err = c.writer.Flush()
-	if err != nil {
-		return err
-	}
+	c.write <- resp
 	return nil
 }
 

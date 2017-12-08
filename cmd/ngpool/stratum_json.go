@@ -29,9 +29,10 @@ var stratumErrors = map[int]*StratumError{
 }
 
 type StratumResponse struct {
-	ID     int64         `json:"id"`
-	Result interface{}   `json:"result"`
-	Error  *StratumError `json:"error"`
+	ID     *int64      `json:"id"`
+	Result interface{} `json:"result"`
+	Method string      `json:"method,omitempty"`
+	Error  interface{} `json:"error"`
 }
 
 type StratumMessage struct {
