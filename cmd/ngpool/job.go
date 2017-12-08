@@ -346,6 +346,10 @@ func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob,
 		transactions = append(transactions, decoded)
 	}
 
+	if template.Extras.ChainID == 0 {
+		return nil, errors.New("Null chainid")
+	}
+
 	acj := &AuxChainJob{
 		currencyConfig: config,
 		target:         target,
