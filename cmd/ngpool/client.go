@@ -129,21 +129,21 @@ func (c *StratumClient) readLoop() {
 		}
 		if err != nil {
 			c.log.Warn("Error reading", "err", err)
-			c.sendError(-1, StratumErrorOther)
+			c.sendError(nil, StratumErrorOther)
 			return
 		}
 		var msg StratumMessage
 		err = json.Unmarshal(raw, &msg)
 		if err != nil {
 			c.log.Warn("Error unmarshaling", "err", err)
-			c.sendError(-1, StratumErrorOther)
+			c.sendError(nil, StratumErrorOther)
 			continue
 		}
 		c.log.Debug("Recieve", "msg", msg)
 		switch msg.Method {
 		case "mining.subscribe":
 			if c.subscribed {
-				c.sendError(-1, StratumErrorOther)
+				c.sendError(msg.ID, StratumErrorOther)
 				continue
 			}
 			ms := DecodeMiningSubscribe(msg.Params)
@@ -156,7 +156,7 @@ func (c *StratumClient) readLoop() {
 			diffSub := randomString()
 			notifySub := randomString()
 			err = c.send(&StratumResponse{
-				ID: *msg.ID,
+				ID: msg.ID,
 				Result: []interface{}{
 					[]interface{}{
 						[]interface{}{"mining.set_difficulty", diffSub},
@@ -172,18 +172,18 @@ func (c *StratumClient) readLoop() {
 			c.subscribed = true
 		case "mining.authorize":
 			if !c.subscribed {
-				c.sendError(-1, StratumErrorNotSubbed)
+				c.sendError(msg.ID, StratumErrorNotSubbed)
 				continue
 			}
 			ma, err := DecodeMiningAuthorize(msg.Params)
 			if err != nil {
-				c.sendError(-1, StratumErrorOther)
+				c.sendError(msg.ID, StratumErrorOther)
 				continue
 			}
 			// We ignore passwords
 			c.username = ma.Username
 			err = c.send(&StratumResponse{
-				ID:     *msg.ID,
+				ID:     msg.ID,
 				Result: true,
 			})
 			if err != nil {
@@ -198,7 +198,7 @@ func (c *StratumClient) readLoop() {
 	}
 }
 
-func (c *StratumClient) sendError(id int64, code int) error {
+func (c *StratumClient) sendError(id *int64, code int) error {
 	err := stratumErrors[code]
 	resp := &StratumResponse{
 		ID:     id,
