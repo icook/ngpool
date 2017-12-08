@@ -209,7 +209,7 @@ func auxMerkleBranch(merkleBase [][]byte, followHash []byte) ([][]byte, uint32) 
 				// bitmask already set to 0
 			} else if bytes.Compare(hashes[i+1], follow) == 0 {
 				bitMask |= (1 << level)
-				branch = append(branch, hashes[i+1])
+				branch = append(branch, hashes[i])
 				follow = hsh.Sum(nil)
 			}
 		}
