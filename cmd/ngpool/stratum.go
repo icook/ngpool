@@ -21,6 +21,11 @@ import (
 	"time"
 )
 
+type Template struct {
+	key  TemplateKey
+	data []byte
+}
+
 type TemplateKey struct {
 	Algo         string
 	Currency     string
@@ -28,18 +33,17 @@ type TemplateKey struct {
 }
 
 type StratumServer struct {
-	config             *viper.Viper
-	etcd               client.Client
-	etcdKeys           client.KeysAPI
+	config   *viper.Viper
+	etcd     client.Client
+	etcdKeys client.KeysAPI
+
 	coinserverWatchers map[string]*CoinserverWatcher
-	templateCast       map[TemplateKey]broadcast.Broadcaster
-	templateCastMtx    *sync.Mutex
+	newTemplate        chan *Template
+	jobCast            broadcast.Broadcaster
+
 	// Keyed by currency code
-	blockCast     map[string]broadcast.Broadcaster
-	blockCastMtx  *sync.Mutex
-	jobCast       broadcast.Broadcaster
-	latestTemp    map[TemplateKey][]byte
-	latestTempMtx sync.Mutex
+	blockCast    map[string]broadcast.Broadcaster
+	blockCastMtx *sync.Mutex
 }
 
 func NewStratumServer() *StratumServer {
@@ -56,13 +60,10 @@ func NewStratumServer() *StratumServer {
 		config:             config,
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
 
-		templateCast:    make(map[TemplateKey]broadcast.Broadcaster),
-		templateCastMtx: &sync.Mutex{},
-		blockCast:       make(map[string]broadcast.Broadcaster),
-		blockCastMtx:    &sync.Mutex{},
-		jobCast:         broadcast.NewBroadcaster(10),
-		latestTemp:      map[TemplateKey][]byte{},
-		latestTempMtx:   sync.Mutex{},
+		newTemplate:  make(chan *Template),
+		blockCast:    make(map[string]broadcast.Broadcaster),
+		blockCastMtx: &sync.Mutex{},
+		jobCast:      broadcast.NewBroadcaster(10),
 	}
 
 	return ng
@@ -79,70 +80,53 @@ func (n *StratumServer) Start(service *service.Service) {
 	log.Root().SetHandler(handler)
 	log.Info("Set log level", "level", level)
 
-	updates, err := service.ServiceWatcher("coinserver")
-	if err != nil {
-		log.Crit("Failed to start coinserver watcher", "err", err)
-	}
-
-	go n.HandleCoinserverWatcherUpdates(updates)
-
-	var tmplKey TemplateKey
-	val := n.config.Get("BaseCurrency")
-	err = mapstructure.Decode(val, &tmplKey)
-	if err != nil {
-		log.Error("Invalid configuration, 'BaseCurrency' of improper format", "err", err)
-		return
-	}
-	go n.listenTemplate(tmplKey)
-
 	var tmplKeys []TemplateKey
-	val = n.config.Get("AuxCurrencies")
+	val := n.config.Get("AuxCurrencies")
 	err = mapstructure.Decode(val, &tmplKeys)
 	if err != nil {
 		log.Error("Invalid configuration, 'AuxCurrency' of improper format", "err", err)
 		return
 	}
-	for _, tmplKey := range tmplKeys {
-		go n.listenTemplate(tmplKey)
+
+	var tmplKey TemplateKey
+	val = n.config.Get("BaseCurrency")
+	err = mapstructure.Decode(val, &tmplKey)
+	if err != nil {
+		log.Error("Invalid configuration, 'BaseCurrency' of improper format", "err", err)
+		return
 	}
+	tmplKeys = append(tmplKeys, tmplKey)
+
+	go n.listenTemplates()
+
+	updates, err := service.ServiceWatcher("coinserver")
+	if err != nil {
+		log.Crit("Failed to start coinserver watcher", "err", err)
+	}
+	go n.HandleCoinserverWatcherUpdates(updates, tmplKeys)
 
 	if n.config.GetBool("EnableCpuminer") {
 		go n.Miner()
 	}
-
 	go n.ListenMiners()
 }
 
-func (n *StratumServer) listenTemplate(tmplKey TemplateKey) {
-	logger := log.New("key", tmplKey)
-	logger.Info("Registering template listener")
-	listener := make(chan interface{})
-	broadcast := n.getTemplateCast(tmplKey)
-	broadcast.Register(listener)
-	defer func() {
-		logger.Debug("Closing template listener channel")
-		broadcast.Unregister(listener)
-		close(listener)
-	}()
+func (n *StratumServer) listenTemplates() {
+	// Starts a goroutine to listen for new templates from newTemplate channel.
+	// When new templates are available a new job is created and broadcasted
+	// over jobBroadcast
+	latestTemp := map[TemplateKey][]byte{}
 	for {
-		newTemplate := <-listener
-		logger.Info("Got new template")
-		template, ok := newTemplate.([]byte)
-		if !ok {
-			logger.Error("Got invalid type from template listener", "template", newTemplate)
-			continue
-		}
-		n.latestTempMtx.Lock()
-		n.latestTemp[tmplKey] = template
-		job, err := NewJobFromTemplates(n.latestTemp)
+		newTemplate := <-n.newTemplate
+		log.Info("Got new template", "key", newTemplate.key)
+		latestTemp[newTemplate.key] = newTemplate.data
+		job, err := NewJobFromTemplates(latestTemp)
 		if err != nil {
-			logger.Error("Error generating job", "err", err)
-			n.latestTempMtx.Unlock()
+			log.Error("Error generating job", "err", err)
 			continue
 		}
-		logger.Info("New job successfully generated, pushing...")
+		log.Info("New job generated, pushing...")
 		n.jobCast.Submit(job)
-		n.latestTempMtx.Unlock()
 	}
 }
 
@@ -209,14 +193,14 @@ func (n *StratumServer) Stop() {
 }
 
 type CoinserverWatcher struct {
-	id           string
-	tmplKey      TemplateKey
-	endpoint     string
-	status       string
-	currencyCast broadcast.Broadcaster
-	blockCast    broadcast.Broadcaster
-	wg           sync.WaitGroup
-	shutdown     chan interface{}
+	id          string
+	tmplKey     TemplateKey
+	endpoint    string
+	status      string
+	newTemplate chan *Template
+	blockCast   broadcast.Broadcaster
+	wg          sync.WaitGroup
+	shutdown    chan interface{}
 }
 
 func (cw *CoinserverWatcher) Stop() {
@@ -342,8 +326,11 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 						logger.Error("Bad payload from coinserver", "payload", decoded)
 					}
 					lastEvent.Data = decoded
-					log.Debug("Got new template", "endpoint", cw.endpoint, "event", lastEvent)
-					cw.currencyCast.Submit(lastEvent.Data)
+					logger.Debug("Got new template", "data", string(decoded))
+					cw.newTemplate <- &Template{
+						data: lastEvent.Data,
+						key:  cw.tmplKey,
+					}
 					if cw.status != "live" {
 						logger.Info("CoinserverWatcher is now LIVE")
 					}
@@ -373,7 +360,8 @@ func (n *StratumServer) ListenMiners() {
 	}
 }
 
-func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.ServiceStatusUpdate) {
+func (n *StratumServer) HandleCoinserverWatcherUpdates(
+	updates chan service.ServiceStatusUpdate, tmplKeys []TemplateKey) {
 	log.Info("Listening for new coinserver services")
 	for {
 		update := <-updates
@@ -393,15 +381,31 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.Serv
 				Algo:         labels["algo"].(string),
 				TemplateType: labels["template_type"].(string),
 			}
-			currencyCast := n.getTemplateCast(tmplKey)
+			// I'm sure there's a less verbose way to do this, but if we're not
+			// interested in the templates of this coinserver, ignore the
+			// update and continue
+			found := false
+			for _, key := range tmplKeys {
+				if key == tmplKey {
+					found = true
+					break
+				}
+			}
+			if !found {
+				log.Debug("Ignoring coinserver", "id", update.ServiceID, "key", tmplKey)
+				continue
+			}
+
+			// Create a watcher service that listens for block submission on
+			// blockCast and pushes new templates to newTemplate channel
 			blockCast := n.getBlockCast(labels["currency"].(string))
 			cw := &CoinserverWatcher{
-				endpoint:     labels["endpoint"].(string),
-				status:       "starting",
-				currencyCast: currencyCast,
-				blockCast:    blockCast,
-				id:           update.ServiceID,
-				tmplKey:      tmplKey,
+				endpoint:    labels["endpoint"].(string),
+				status:      "starting",
+				newTemplate: n.newTemplate,
+				blockCast:   blockCast,
+				id:          update.ServiceID,
+				tmplKey:     tmplKey,
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
 			cw.Start()
@@ -410,15 +414,6 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.Serv
 			log.Warn("Unrecognized action from service watcher", "action", update.Action)
 		}
 	}
-}
-
-func (n *StratumServer) getTemplateCast(key TemplateKey) broadcast.Broadcaster {
-	n.templateCastMtx.Lock()
-	if _, ok := n.templateCast[key]; !ok {
-		n.templateCast[key] = broadcast.NewBroadcaster(10)
-	}
-	n.templateCastMtx.Unlock()
-	return n.templateCast[key]
 }
 
 func (n *StratumServer) getBlockCast(key string) broadcast.Broadcaster {
