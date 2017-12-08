@@ -232,7 +232,7 @@ func (cw *CoinserverWatcher) Start() {
 func (cw *CoinserverWatcher) RunBlockCastListener() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
-	logger := log.New("id", cw.id)
+	logger := log.New("id", cw.id[:8], "coin", cw.tmplKey.Currency)
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         cw.endpoint[7:] + "rpc",
@@ -287,6 +287,7 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
+	logger := log.New("id", cw.id[:8], "tmplKey", cw.tmplKey)
 	client := &sse.Client{
 		URL:        cw.endpoint + "blocks",
 		Connection: &http.Client{},
@@ -298,8 +299,7 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 		err := client.SubscribeChan("messages", events)
 		if err != nil {
 			if cw.status != "down" {
-				log.Warn("CoinserverWatcher is now DOWN",
-					"id", cw.id, "tmplKey", cw.tmplKey, "err", err)
+				logger.Warn("CoinserverWatcher is now DOWN", "err", err)
 			}
 			cw.status = "down"
 			select {
@@ -311,7 +311,7 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 		}
 		lastEvent := sse.Event{}
 		cw.status = "up"
-		log.Info("CoinserverWatcher is now UP", "id", cw.id, "tmplKey", cw.tmplKey)
+		logger.Debug("CoinserverWatcher is now UP")
 		for {
 			// Wait for new event or exit signal
 			select {
@@ -332,14 +332,13 @@ func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 				if msg.Data != nil {
 					decoded, err := base64.StdEncoding.DecodeString(string(msg.Data))
 					if err != nil {
-						log.Warn("Bad payload from coinserver", "payload", decoded)
+						logger.Error("Bad payload from coinserver", "payload", decoded)
 					}
 					lastEvent.Data = decoded
 					log.Debug("Got new template", "endpoint", cw.endpoint, "event", lastEvent)
 					cw.currencyCast.Submit(lastEvent.Data)
 					if cw.status != "live" {
-						log.Info("CoinserverWatcher is now LIVE",
-							"id", cw.id, "tmplKey", cw.tmplKey)
+						logger.Info("CoinserverWatcher is now LIVE")
 					}
 					cw.status = "live"
 				}
@@ -355,11 +354,11 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.Serv
 		switch update.Action {
 		case "removed":
 			if csw, ok := n.coinserverWatchers[update.ServiceID]; ok {
-				log.Info("Coinserver shutdown", "id", update.ServiceID)
+				log.Info("Coinserver shutdown", "id", update.ServiceID[:8])
 				csw.Stop()
 			}
 		case "updated":
-			log.Info("Coinserver status update", "id", update.ServiceID, "new_status", update.Status)
+			log.Debug("Coinserver status update", "id", update.ServiceID, "new_status", update.Status)
 		case "added":
 			labels := update.Status.Labels
 			// TODO: Should probably serialize to datatype...
@@ -380,7 +379,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(updates chan service.Serv
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
 			cw.Start()
-			log.Info("New coinserver detected", "id", update.ServiceID, "tmplKey", tmplKey)
+			log.Info("New coinserver detected", "id", update.ServiceID[:8], "tmplKey", tmplKey)
 		default:
 			log.Warn("Unrecognized action from service watcher", "action", update.Action)
 		}

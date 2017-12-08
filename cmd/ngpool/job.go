@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
 )
@@ -87,7 +86,6 @@ MerkleLoop:
 		break
 	}
 
-	spew.Dump(merkleBase)
 	for _, mj := range job.auxChains {
 		branch, mask := auxMerkleBranch(merkleBase, mj.headerHash.CloneBytes())
 		mj.blockchainMerkleBranch = branch
@@ -117,7 +115,6 @@ MerkleLoop:
 		mmCoinbase.Write(encodedNonce)
 	}
 
-	spew.Dump(mmCoinbase.Bytes())
 	coinbase1, coinbase2, err := mainJobTemplate.createCoinbaseSplit(job.currencyConfig, mmCoinbase.Bytes())
 	if err != nil {
 		return nil, errors.Wrap(err, "Unable to create coinbase")
@@ -352,7 +349,7 @@ func (j *AuxChainJob) GetBlock(coinbase []byte, parentHash []byte, coinbaseBranc
 	block.Write(parentHash)
 	// Coinbase merkle branch
 	wire.WriteVarInt(&block, 0, uint64(len(coinbaseBranch)))
-	for i, branch := range coinbaseBranch {
+	for _, branch := range coinbaseBranch {
 		block.Write(branch)
 	}
 	// Coinbase branch mask is always all zeros (right, right, right...)
@@ -360,7 +357,7 @@ func (j *AuxChainJob) GetBlock(coinbase []byte, parentHash []byte, coinbaseBranc
 
 	// Blockchain merkle branch
 	wire.WriteVarInt(&block, 0, uint64(len(j.blockchainMerkleBranch)))
-	for i, branch := range j.blockchainMerkleBranch {
+	for _, branch := range j.blockchainMerkleBranch {
 		block.Write(branch)
 	}
 	// Coinbase branch mask is always all zeros (right, right, right...)
