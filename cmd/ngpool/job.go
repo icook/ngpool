@@ -159,7 +159,10 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 		return nil, false, err
 	}
 	bigHsh := blockchain.HashToBig(hashObj)
-	if shareTarget != nil && bigHsh.Cmp(shareTarget) <= 0 {
+	// Share targets are in opposite endian of block targets (i think..), so
+	// the comparison direction is opposite as well. Here we check if hash >
+	// target, but below we check if hash < network_target
+	if shareTarget != nil && bigHsh.Cmp(shareTarget) >= 0 {
 		validShare = true
 	}
 
