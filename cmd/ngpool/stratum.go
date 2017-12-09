@@ -11,6 +11,8 @@ import (
 	"github.com/icook/btcd/rpcclient"
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 	"github.com/mitchellh/mapstructure"
 	"github.com/r3labs/sse"
 	"github.com/spf13/viper"
@@ -43,6 +45,7 @@ type StratumServer struct {
 	config   *viper.Viper
 	etcd     client.Client
 	etcdKeys client.KeysAPI
+	db       *sqlx.DB
 
 	coinserverWatchers map[string]*CoinserverWatcher
 	newShare           chan *Share
@@ -85,6 +88,13 @@ func NewStratumServer() *StratumServer {
 }
 
 func (n *StratumServer) Start(service *service.Service) {
+	db, err := sqlx.Connect("postgres", n.config.GetString("DbConnectionString"))
+	if err != nil {
+		log.Crit("Failed to connect to db", "err", err)
+		panic(err)
+	}
+	n.db = db
+
 	levelConfig := n.config.GetString("LogLevel")
 	level, err := log.LvlFromString(levelConfig)
 	if err != nil {
@@ -130,11 +140,28 @@ func (n *StratumServer) Start(service *service.Service) {
 
 func (n *StratumServer) ListenShares() {
 	log.Debug("Starting ListenShares")
+	chainName := n.config.GetString("ShareChainName")
 	for {
 		share := <-n.newShare
 		log.Debug("Got share", "share", share)
 		for currencyCode, block := range share.blocks {
+
+			_, err := n.db.Exec(
+				`INSERT INTO block
+				(currency, blockhash, powhash, subsidy, mined_at, mined_by, difficulty, chain)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				currencyCode, "a", "b", 12, share.time, share.username, 1, chainName)
+			if err != nil {
+				log.Error("Failed to save block", "err", err)
+			}
 			n.blockCast[currencyCode].Submit(block)
+		}
+		_, err := n.db.Exec(
+			`INSERT INTO share (username, difficulty, mined_at, chain)
+			VALUES ($1, $2, $3, $4)`,
+			share.username, share.difficulty, share.time, chainName)
+		if err != nil {
+			log.Error("Failed to save share", "err", err)
 		}
 	}
 }
