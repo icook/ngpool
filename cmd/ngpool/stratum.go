@@ -21,6 +21,13 @@ import (
 	"time"
 )
 
+type Share struct {
+	username   string
+	time       time.Time
+	difficulty float64
+	blocks     map[string][]byte
+}
+
 type Template struct {
 	key  TemplateKey
 	data []byte
@@ -38,6 +45,7 @@ type StratumServer struct {
 	etcdKeys client.KeysAPI
 
 	coinserverWatchers map[string]*CoinserverWatcher
+	newShare           chan *Share
 	newTemplate        chan *Template
 	jobSubscribe       chan chan interface{}
 	jobCast            broadcast.Broadcaster
@@ -65,6 +73,7 @@ func NewStratumServer() *StratumServer {
 		coinserverWatchers: make(map[string]*CoinserverWatcher),
 
 		newTemplate:  make(chan *Template),
+		newShare:     make(chan *Share),
 		jobSubscribe: make(chan chan interface{}),
 		blockCast:    make(map[string]broadcast.Broadcaster),
 		blockCastMtx: &sync.Mutex{},
@@ -116,9 +125,22 @@ func (n *StratumServer) Start(service *service.Service) {
 	}
 	go n.ListenMiners()
 	go n.ListenSubscribers()
+	go n.ListenShares()
+}
+
+func (n *StratumServer) ListenShares() {
+	log.Debug("Starting ListenShares")
+	for {
+		share := <-n.newShare
+		log.Debug("Got share", "share", share)
+		for currencyCode, block := range share.blocks {
+			n.blockCast[currencyCode].Submit(block)
+		}
+	}
 }
 
 func (n *StratumServer) ListenSubscribers() {
+	log.Debug("Starting ListenSubscribers")
 	for {
 		listener := <-n.jobSubscribe
 		n.lastJobMtx.Lock()
@@ -377,7 +399,7 @@ func (n *StratumServer) ListenMiners() {
 			log.Warn("Failed to accept connection", "err", err)
 			continue
 		}
-		c := NewClient(conn, n.jobSubscribe)
+		c := NewClient(conn, n.jobSubscribe, n.newShare)
 		c.Start()
 	}
 }

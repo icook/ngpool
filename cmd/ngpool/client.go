@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net"
+	"time"
 )
 
 type StratumClient struct {
@@ -24,6 +25,7 @@ type StratumClient struct {
 	write        chan []byte
 	jobListener  chan interface{}
 	jobSubscribe chan chan interface{}
+	newShare     chan *Share
 	submit       chan *MiningSubmit
 	log          log.Logger
 	conn         net.Conn
@@ -39,7 +41,7 @@ func init() {
 	}
 }
 
-func NewClient(conn net.Conn, jobSubscribe chan chan interface{}) *StratumClient {
+func NewClient(conn net.Conn, jobSubscribe chan chan interface{}, newShare chan *Share) *StratumClient {
 	sc := &StratumClient{
 		subscribed:   false,
 		conn:         conn,
@@ -49,6 +51,7 @@ func NewClient(conn net.Conn, jobSubscribe chan chan interface{}) *StratumClient
 		jobListener:  make(chan interface{}),
 		submit:       make(chan *MiningSubmit),
 		write:        make(chan []byte, 10),
+		newShare:     newShare,
 	}
 	sc.log = log.New("clientid", sc.id)
 	return sc
@@ -137,7 +140,7 @@ func (c *StratumClient) writeLoop() {
 			targetFl.SetFloat64(clientJob.difficulty)
 			targetFl.Mul(&diff1, &targetFl)
 			target, _ := targetFl.Int(&big.Int{})
-			_, validShare, err := job.CheckSolves(
+			blocks, validShare, err := job.CheckSolves(
 				submission.Nonce, extranonce, target)
 			if err != nil {
 				c.log.Warn("Unexpected error CheckSolves", "job", clientJob)
@@ -159,6 +162,13 @@ func (c *StratumClient) writeLoop() {
 				continue
 			}
 			clientJob.submissionMap[submissionKey] = true
+			c.newShare <- &Share{
+				username:   c.username,
+				time:       time.Now(),
+				difficulty: clientJob.difficulty,
+				blocks:     blocks,
+			}
+
 		case raw = <-c.jobListener:
 			if raw == nil {
 				c.log.Debug("Closing job listener")
