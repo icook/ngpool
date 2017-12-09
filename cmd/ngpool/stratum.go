@@ -15,19 +15,37 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/mitchellh/mapstructure"
 	"github.com/r3labs/sse"
+	"github.com/seehuhn/sha256d"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
+	"math/big"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 )
 
+type BlockSolve struct {
+	powhash    *big.Int
+	difficulty *big.Int
+	height     int64
+	subsidy    int64
+	data       []byte
+}
+
+func (b *BlockSolve) getBlockHash() *big.Int {
+	var hasher = sha256d.New()
+	hasher.Write(b.data)
+	ret := big.Int{}
+	ret.SetBytes(hasher.Sum(nil))
+	return &ret
+}
+
 type Share struct {
 	username   string
 	time       time.Time
 	difficulty float64
-	blocks     map[string][]byte
+	blocks     map[string]*BlockSolve
 }
 
 type Template struct {
@@ -145,16 +163,23 @@ func (n *StratumServer) ListenShares() {
 		share := <-n.newShare
 		log.Debug("Got share", "share", share)
 		for currencyCode, block := range share.blocks {
-
+			n.blockCast[currencyCode].Submit(block)
 			_, err := n.db.Exec(
 				`INSERT INTO block
-				(currency, blockhash, powhash, subsidy, mined_at, mined_by, difficulty, chain)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-				currencyCode, "a", "b", 12, share.time, share.username, 1, chainName)
+				(height, currency, blockhash, powhash, subsidy, mined_at, mined_by, difficulty, chain)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				block.height,
+				currencyCode,
+				hex.EncodeToString(block.getBlockHash().Bytes()),
+				hex.EncodeToString(block.powhash.Bytes()),
+				block.subsidy,
+				share.time,
+				share.username,
+				block.difficulty.String(),
+				chainName)
 			if err != nil {
 				log.Error("Failed to save block", "err", err)
 			}
-			n.blockCast[currencyCode].Submit(block)
 		}
 		_, err := n.db.Exec(
 			`INSERT INTO share (username, difficulty, mined_at, chain)
@@ -317,12 +342,12 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 	}()
 	for {
 		msg := <-listener
-		newBlock := msg.([]byte)
+		newBlock := msg.(*BlockSolve)
 		if err != nil {
 			logger.Error("Invalid type recieved from blockCast", "err", err)
 			continue
 		}
-		hexString := hex.EncodeToString(newBlock)
+		hexString := hex.EncodeToString(newBlock.data)
 		encodedBlock, err := json.Marshal(hexString)
 		if err != nil {
 			logger.Error("Failed to json marshal a string", "err", err)

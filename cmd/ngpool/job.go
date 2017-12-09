@@ -141,8 +141,8 @@ func (j *Job) GetStratumParams() ([]interface{}, error) {
 	}, nil
 }
 
-func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string][]byte, bool, error) {
-	var ret = map[string][]byte{}
+func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string]*BlockSolve, bool, error) {
+	var ret = map[string]*BlockSolve{}
 	var validShare = false
 
 	coinbase := bytes.Buffer{}
@@ -167,13 +167,24 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	}
 
 	if bigHsh.Cmp(j.target) <= 0 {
-		ret[j.currencyConfig.Code] = j.GetBlock(header, coinbase.Bytes())
+		ret[j.currencyConfig.Code] = &BlockSolve{
+			data:       j.GetBlock(header, coinbase.Bytes()),
+			subsidy:    j.subsidy,
+			height:     j.height,
+			powhash:    bigHsh,
+			difficulty: j.target,
+		}
 	}
 
 	for _, mj := range j.auxChains {
 		if bigHsh.Cmp(mj.target) <= 0 {
-			ret[mj.currencyConfig.Code] = mj.GetBlock(
-				coinbase.Bytes(), headerHsh, j.merkleBranch, header)
+			ret[mj.currencyConfig.Code] = &BlockSolve{
+				data:       mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
+				subsidy:    j.subsidy,
+				height:     j.height,
+				powhash:    bigHsh,
+				difficulty: mj.target,
+			}
 		}
 	}
 	return ret, validShare, nil
@@ -181,17 +192,24 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 
 type MainChainJob struct {
 	currencyConfig *ChainConfig
-	bits           []byte
-	time           []byte
-	version        []byte
-	prevBlockHash  []byte
-	coinbase1      []byte
-	coinbase2      []byte
-	merkleBranch   [][]byte
+	// For saving to database on solve
+	subsidy int64
+	height  int64
 
+	// For making the block header for mining/solve
+	bits          []byte
+	time          []byte
+	version       []byte
+	prevBlockHash []byte
+	coinbase1     []byte
+	coinbase2     []byte
+	merkleBranch  [][]byte
+
+	// For checking solve and submitblock encoding
 	target       *big.Int
 	transactions [][]byte
 
+	// for miners
 	cleanJobs bool
 }
 
@@ -229,6 +247,9 @@ func NewMainChainJob(tmpl *BlockTemplate, config *ChainConfig) (*MainChainJob, e
 	}
 
 	job := &MainChainJob{
+		height:  tmpl.Height,
+		subsidy: tmpl.CoinbaseValue,
+
 		currencyConfig: config,
 		transactions:   transactions,
 		bits:           encodedBits,
@@ -281,7 +302,12 @@ func (j *MainChainJob) GetBlock(header []byte, coinbase []byte) []byte {
 }
 
 type AuxChainJob struct {
-	currencyConfig         *ChainConfig
+	currencyConfig *ChainConfig
+	// For saving to database on solve
+	subsidy int64
+	height  int64
+
+	// For checking solve and submitblock encoding
 	headerHash             *chainhash.Hash
 	blockHeader            []byte
 	chainID                int
@@ -355,6 +381,9 @@ func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob,
 	}
 
 	acj := &AuxChainJob{
+		height:  template.Height,
+		subsidy: template.CoinbaseValue,
+
 		currencyConfig: config,
 		target:         target,
 		coinbase:       coinbase,

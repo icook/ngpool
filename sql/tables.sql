@@ -18,6 +18,7 @@ CREATE INDEX chain_time_key
 CREATE TABLE public.block
 (
     currency varchar NOT NULL,
+    height bigint NOT NULL,
     blockhash varchar NOT NULL,
     powhash varchar NOT NULL,
     subsidy numeric NOT NULL,
