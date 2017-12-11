@@ -171,7 +171,7 @@ func (n *StratumServer) ListenShares() {
 			n.blockCast[currencyCode].Submit(block)
 			_, err := n.db.Exec(
 				`INSERT INTO block
-				(height, currency, blockhash, powhash, subsidy, mined_at, mined_by, difficulty, chain)
+				(height, currency, hash, powhash, subsidy, mined_at, mined_by, difficulty, chain)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 				block.height,
 				currencyCode,

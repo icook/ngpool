@@ -17,13 +17,14 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	ng := NewStratumServer()
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the coinbuddy and coinserver",
 		Run: func(cmd *cobra.Command, args []string) {
-			defer ng.Stop()
-			ng.Start()
+			ng := NewNgWebAPI()
+			ng.ParseConfig()
+			ng.SetupGin()
+			ng.engine.Run()
 
 			// Wait until we recieve sigint
 			sigs := make(chan os.Signal, 1)

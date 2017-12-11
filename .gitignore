@@ -3,3 +3,4 @@ vendor/*
 /ngctl
 /ngcoinbuddy
 /ngstratum
+/ngweb
