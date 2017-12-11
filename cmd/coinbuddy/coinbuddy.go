@@ -8,6 +8,7 @@ import (
 	"github.com/dustin/go-broadcast"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/btcd/btcjson"
+	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
@@ -27,6 +28,7 @@ type CoinBuddy struct {
 	lastBlockMtx   sync.RWMutex
 	broadcast      broadcast.Broadcaster
 	templateExtras []byte
+	service        *service.Service
 }
 
 func NewCoinBuddy() *CoinBuddy {
@@ -56,6 +58,14 @@ func NewCoinBuddy() *CoinBuddy {
 		lastBlockMtx: sync.RWMutex{},
 	}
 
+	cb.service = service.NewService("coinserver", cb.config)
+	cb.service.SetLabels(map[string]interface{}{
+		"algo":          cb.config.GetString("HashingAlgo"),
+		"currency":      cb.config.GetString("CurrencyCode"),
+		"endpoint":      fmt.Sprintf("http://%s/", cb.config.GetString("EventListenerBind")),
+		"template_type": cb.config.GetString("TemplateType"),
+	})
+
 	return cb
 }
 
@@ -77,6 +87,7 @@ func (c *CoinBuddy) Run() {
 	c.generateTemplateExtras()
 	c.RunBlockListener()
 	c.RunEventListener()
+	go c.service.KeepAlive()
 }
 
 func (c *CoinBuddy) generateTemplateExtras() {

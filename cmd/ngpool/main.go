@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/icook/ngpool/pkg/service"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -20,16 +19,12 @@ var RootCmd = &cobra.Command{
 func init() {
 	RootCmd.PersistentFlags().String("ServiceType", "", "")
 	ng := NewStratumServer()
-	getAttributes := func() map[string]interface{} {
-		return map[string]interface{}{}
-	}
-	s := service.NewService("stratum", ng.config, getAttributes)
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the coinbuddy and coinserver",
 		Run: func(cmd *cobra.Command, args []string) {
 			defer ng.Stop()
-			ng.Start(s)
+			ng.Start()
 
 			// Wait until we recieve sigint
 			sigs := make(chan os.Signal, 1)

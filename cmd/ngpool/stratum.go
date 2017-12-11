@@ -70,6 +70,7 @@ type StratumServer struct {
 	newTemplate        chan *Template
 	jobSubscribe       chan chan interface{}
 	jobCast            broadcast.Broadcaster
+	service            *service.Service
 
 	lastJob    *Job
 	lastJobMtx *sync.Mutex
@@ -84,7 +85,6 @@ func NewStratumServer() *StratumServer {
 
 	config.SetDefault("LogLevel", "info")
 	config.SetDefault("EnableCpuminer", false)
-	config.SetDefault("Ports", []string{})
 	config.SetDefault("StratumBind", "127.0.0.1:3333")
 	// Load from Env so we can access etcd
 	config.AutomaticEnv()
@@ -101,11 +101,15 @@ func NewStratumServer() *StratumServer {
 		lastJobMtx:   &sync.Mutex{},
 		jobCast:      broadcast.NewBroadcaster(10),
 	}
+	ng.service = service.NewService("stratum", config)
+	ng.service.SetLabels(map[string]interface{}{
+		"endpoint": config.GetString("StratumBind"),
+	})
 
 	return ng
 }
 
-func (n *StratumServer) Start(service *service.Service) {
+func (n *StratumServer) Start() {
 	db, err := sqlx.Connect("postgres", n.config.GetString("DbConnectionString"))
 	if err != nil {
 		log.Crit("Failed to connect to db", "err", err)
@@ -142,11 +146,12 @@ func (n *StratumServer) Start(service *service.Service) {
 
 	go n.listenTemplates()
 
-	updates, err := service.ServiceWatcher("coinserver")
+	updates, err := n.service.ServiceWatcher("coinserver")
 	if err != nil {
 		log.Crit("Failed to start coinserver watcher", "err", err)
 	}
 	go n.HandleCoinserverWatcherUpdates(updates, tmplKeys)
+	go n.service.KeepAlive()
 
 	if n.config.GetBool("EnableCpuminer") {
 		go n.Miner()

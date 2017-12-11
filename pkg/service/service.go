@@ -15,6 +15,7 @@ import (
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
+	"os"
 	"time"
 )
 
@@ -22,8 +23,7 @@ type Service struct {
 	config        *viper.Viper
 	serviceID     string
 	namespace     string
-	getLabels     func() map[string]interface{}
-	getEndpoints  func() map[string]interface{}
+	labels        map[string]interface{}
 	pushStatus    chan map[string]interface{}
 	etcd          client.Client
 	etcdKeys      client.KeysAPI
@@ -45,11 +45,10 @@ type ServiceStatus struct {
 	UpdateTime time.Time
 }
 
-func NewService(namespace string, config *viper.Viper, getLabels func() map[string]interface{}) *Service {
+func NewService(namespace string, config *viper.Viper) *Service {
 	s := &Service{
 		namespace: namespace,
 		config:    config,
-		getLabels: getLabels,
 		editor:    "vi",
 	}
 	s.SetServiceID(s.config.GetString("ServiceID"))
@@ -86,6 +85,10 @@ func NewService(namespace string, config *viper.Viper, getLabels func() map[stri
 
 	s.SetupCurrencies()
 	return s
+}
+
+func (s *Service) SetLabels(new map[string]interface{}) {
+	s.labels = new
 }
 
 type ChainConfigDecoder struct {
@@ -271,10 +274,13 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 func (s *Service) KeepAlive() error {
 	var (
 		lastValue  string
-		labels     map[string]interface{} = s.getLabels()
 		lastStatus map[string]interface{} = make(map[string]interface{})
 		serviceID  string                 = s.config.GetString("ServiceID")
 	)
+	if len(s.labels) == 0 {
+		log.Crit("Cannot start service KeepAlive without labels")
+		os.Exit(1)
+	}
 	for {
 		select {
 		case lastStatus = <-s.pushStatus:
@@ -283,7 +289,7 @@ func (s *Service) KeepAlive() error {
 
 		// Serialize a new value to write
 		valueMap := map[string]interface{}{}
-		valueMap["labels"] = labels
+		valueMap["labels"] = s.labels
 		valueMap["status"] = lastStatus
 		valueRaw, err := json.Marshal(valueMap)
 		value := string(valueRaw)
