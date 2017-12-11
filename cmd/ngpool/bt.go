@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
@@ -114,7 +115,7 @@ func (b *BlockTemplate) merkleBranch() [][]byte {
 // A placeholder for the extranonce
 var extraNonceMagic []byte = []byte{0xdb, 0xa9, 0xf8, 0x6a, 0xfc, 0xc7, 0x27, 0x59}
 
-func (b *BlockTemplate) createCoinbaseSplit(chainConfig *ChainConfig, extra []byte) ([]byte, []byte, error) {
+func (b *BlockTemplate) createCoinbaseSplit(chainConfig *service.ChainConfig, extra []byte) ([]byte, []byte, error) {
 	newExtra := append(extra, extraNonceMagic...)
 	txRaw, err := b.createCoinbase(chainConfig, newExtra)
 	if err != nil {
@@ -127,7 +128,7 @@ func (b *BlockTemplate) createCoinbaseSplit(chainConfig *ChainConfig, extra []by
 	return parts[0], parts[1], nil
 }
 
-func (b *BlockTemplate) createCoinbase(chainConfig *ChainConfig, extra []byte) ([]byte, error) {
+func (b *BlockTemplate) createCoinbase(chainConfig *service.ChainConfig, extra []byte) ([]byte, error) {
 	// Create the script to pay to the provided payment address.
 	pkScript, err := txscript.PayToAddrScript(*chainConfig.BlockSubsidyAddress)
 	if err != nil {

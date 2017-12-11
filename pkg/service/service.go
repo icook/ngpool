@@ -1,24 +1,20 @@
 package service
 
 import (
-	"bufio"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/coreos/etcd/client"
-	"github.com/fatih/color"
+	"github.com/mitchellh/mapstructure"
 	"strings"
 	//	"github.com/satori/go.uuid.git"
 	log "github.com/inconshreveable/log15"
-	"github.com/satori/go.uuid"
-	"github.com/sergi/go-diff/diffmatchpatch"
-	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"time"
 )
 
@@ -60,9 +56,10 @@ func NewService(namespace string, config *viper.Viper, getLabels func() map[stri
 	s.config.SetDefault("EtcdEndpoint", []string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
 
 	log.Info("Loaded service, pulling config from etcd", "service", s.serviceID)
+	s.config.SetConfigType("yaml")
+
 	keyPath := "/config/" + s.namespace + "/" + s.serviceID
 	s.config.AddRemoteProvider("etcd", s.config.GetStringSlice("EtcdEndpoint")[0], keyPath)
-	s.config.SetConfigType("yaml")
 	err := s.config.ReadRemoteConfig()
 	if err != nil {
 		log.Warn("Unable to load from etcd", "err", err, "keypath", keyPath)
@@ -81,7 +78,89 @@ func NewService(namespace string, config *viper.Viper, getLabels func() map[stri
 	s.etcd = etcd
 	s.etcdKeys = client.NewKeysAPI(s.etcd)
 
+	res, err := s.etcdKeys.Get(context.Background(), "/config/common", nil)
+	if err != nil {
+		log.Crit("Unable to contact etcd", "err", err)
+	}
+	s.config.MergeConfig(strings.NewReader(res.Node.Value))
+
+	s.SetupCurrencies()
 	return s
+}
+
+type ChainConfigDecoder struct {
+	Code           string
+	SubsidyAddress string
+	FeeAddress     string
+	PowAlgorithm   string
+
+	PubKeyAddrID  string
+	PrivKeyID     string
+	PrivKeyAddrID string
+	NetMagic      uint32
+}
+
+type ChainConfig struct {
+	Code                string
+	Algo                *Algo
+	Params              *chaincfg.Params
+	BlockSubsidyAddress *btcutil.Address
+	FeeAddress          *btcutil.Address
+}
+
+var CurrencyConfig = map[string]*ChainConfig{}
+
+func (s *Service) SetupCurrencies() {
+	for _, rawConfig := range s.config.GetStringMap("Currencies") {
+		var config ChainConfigDecoder
+		err := mapstructure.Decode(rawConfig, &config)
+		if err != nil {
+			panic(err)
+		}
+		log.Debug("Decoded currency config", "config", config, "rawConfig", rawConfig)
+		fmt.Printf("%#v", rawConfig)
+		fmt.Printf("%#v", err)
+
+		params := &chaincfg.Params{
+			Name: config.Code,
+			Net:  wire.BitcoinNet(config.NetMagic),
+		}
+
+		decoded, err := hex.DecodeString(config.PrivKeyAddrID)
+		if err != nil {
+			panic(err)
+		}
+		params.PrivateKeyID = decoded[0]
+
+		decoded, err = hex.DecodeString(config.PubKeyAddrID)
+		if err != nil {
+			panic(err)
+		}
+		params.PubKeyHashAddrID = decoded[0]
+
+		bsa, err := btcutil.DecodeAddress(config.SubsidyAddress, params)
+		if err != nil {
+			panic(err)
+		}
+
+		fa, err := btcutil.DecodeAddress(config.FeeAddress, params)
+		if err != nil {
+			panic(err)
+		}
+
+		cc := &ChainConfig{
+			Code:                config.Code,
+			Params:              params,
+			BlockSubsidyAddress: &bsa,
+			FeeAddress:          &fa,
+			Algo:                AlgoConfig[config.PowAlgorithm],
+		}
+
+		if err := chaincfg.Register(params); err != nil {
+			panic("failed to register network: " + err.Error())
+		}
+		CurrencyConfig[config.Code] = cc
+	}
 }
 
 func (s *Service) SetServiceID(id string) {
@@ -234,176 +313,14 @@ func (s *Service) KeepAlive() error {
 	return nil
 }
 
-func (s *Service) getDefaultConfig() string {
-	b, err := yaml.Marshal(s.config.AllSettings())
-	if err != nil {
-		log.Crit("Failed to serialize config", "err", err)
-	}
-	return string(b)
-}
-
-func (s *Service) editFile(fpath string) string {
-	// Launch editor with our tmp file
-	editorPath, err := exec.LookPath(s.editor)
-	if err != nil {
-		log.Crit("Failed editor path lookup", "err", err, "editor", s.editor)
-	}
-	cmd := exec.Command(editorPath, fpath)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Start()
-	if err != nil {
-		log.Crit("Failed to start editor", "err", err)
-	}
-	err = cmd.Wait()
-
-	// Read in edited config
-	newConfigByte, err := ioutil.ReadFile(fpath)
-	newConfig := string(newConfigByte)
-	if err != nil {
-		log.Crit("Somehow we fail to read a file we just made...", "err", err)
-	}
-	return newConfig
-}
-
-func (s *Service) mktmp(contents string) *os.File {
-	// Generate a new temporary file with our config from the server
-	randSuffix := time.Now().UnixNano() + int64(os.Getpid())
-	fname := fmt.Sprintf("%s_cfgscratch.%d.yaml", s.namespace, randSuffix)
-	fpath := filepath.Join(os.TempDir(), fname)
-	tmpFile, err := os.OpenFile(fpath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
-	if os.IsExist(err) {
-		log.Crit("Failed to make file, maybe another editor is open now?",
-			"fname", fname, "err", err)
-	}
-	_, err = tmpFile.WriteString(contents)
-	if err != nil {
-		log.Crit("Failed to write tmp file", "err", err)
-	}
-	tmpFile.Close()
-	return tmpFile
-}
-
-func (s *Service) modifyLoop(currentVal string) {
-	tmpFile := s.mktmp(currentVal)
-	defer os.Remove(tmpFile.Name())
-
-	for {
-		newConfig := s.editFile(tmpFile.Name())
-		dmp := diffmatchpatch.New()
-		diffs := dmp.DiffMain(currentVal, newConfig, false)
-		fmt.Println(dmp.DiffPrettyText(diffs))
-		for {
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Push changes (y,n,e): ")
-			text, _ := reader.ReadString('\n')
-			input := strings.TrimSpace(text)
-			if input == "y" {
-				_, err := s.etcdKeys.Set(
-					context.Background(), s.configKeyPath, newConfig, nil)
-				if err != nil {
-					log.Crit("Failed pushing config", "err", err)
-				}
-				log.Info("Successfully pushed config", "keypath", s.configKeyPath)
-				return
-			} else if input == "e" {
-				break
-			} else if input != "n" {
-				continue
-			}
-			return
+func (s *Service) getDefaultConfig(common bool) string {
+	if common {
+		return ""
+	} else {
+		b, err := yaml.Marshal(s.config.AllSettings())
+		if err != nil {
+			log.Crit("Failed to serialize config", "err", err)
 		}
+		return string(b)
 	}
-}
-
-func (s *Service) SetupCmds(rootCmd *cobra.Command) {
-	editconfigCmd := &cobra.Command{
-		Use:   "editconfig",
-		Short: "Opens the config in an editor",
-		Run: func(cmd *cobra.Command, args []string) {
-			// Get current config
-			configResp, err := s.etcdKeys.Get(context.Background(), s.configKeyPath, nil)
-			var currentConfig string = ""
-			if err != nil {
-				log.Warn("Failed fetching config", "err", err)
-				reader := bufio.NewReader(os.Stdin)
-				fmt.Print("Load default config? (y,n,q) ")
-				text, _ := reader.ReadString('\n')
-				input := strings.TrimSpace(text)
-				if input == "y" {
-					currentConfig = s.getDefaultConfig()
-				} else if input == "q" {
-					return
-				}
-			} else {
-				currentConfig = string(configResp.Node.Value)
-			}
-
-			s.modifyLoop(currentConfig)
-		}}
-
-	var fileName string
-	loadconfigCmd := &cobra.Command{
-		Use:   "pushconfig",
-		Short: "Loads the config and displays it",
-		Run: func(cmd *cobra.Command, args []string) {
-			fileInput, err := ioutil.ReadFile(fileName)
-			serviceID := s.config.GetString("ServiceID")
-			if serviceID == "" {
-				log.Crit("Cannot push config to etcd without a ServiceID (hint: export SERVICEID=veryuniquestring")
-			}
-			_, err = s.etcdKeys.Set(
-				context.Background(), "/config/"+s.namespace+"/"+serviceID, string(fileInput), nil)
-			if err != nil {
-				log.Crit("Failed pushing config", "err", err)
-			}
-			log.Info("Successfully pushed", "fname", fileName, "namespace", s.namespace, "id", serviceID)
-		}}
-	loadconfigCmd.Flags().StringVarP(&fileName, "config", "c", "", "the config to load")
-
-	dumpconfigCmd := &cobra.Command{
-		Use:   "dumpconfig",
-		Short: "Loads the config and displays it",
-		Run: func(cmd *cobra.Command, args []string) {
-			b, err := yaml.Marshal(s.config.AllSettings())
-			if err != nil {
-				fmt.Println("error:", err)
-			}
-			fmt.Println(string(b))
-		}}
-
-	newCmd := &cobra.Command{
-		Use:   "new",
-		Short: "Creates a new service configuration",
-		Run: func(cmd *cobra.Command, args []string) {
-			s.SetServiceID(uuid.NewV4().String())
-			def := s.getDefaultConfig()
-			s.modifyLoop(def)
-		}}
-
-	lsCmd := &cobra.Command{
-		Use:   "ls",
-		Short: "Lists all service configs",
-		Run: func(cmd *cobra.Command, args []string) {
-			getOpt := &client.GetOptions{
-				Recursive: true,
-			}
-			res, err := s.etcdKeys.Get(context.Background(), "/config/"+s.namespace, getOpt)
-			if err != nil {
-				log.Crit("Unable to contact etcd", "err", err)
-			}
-			for _, node := range res.Node.Nodes {
-				lbi := strings.LastIndexByte(node.Key, '/') + 1
-				serviceID := node.Key[lbi:]
-				color.Green("export SERVICEID=%s", serviceID)
-				fmt.Println(node.Value)
-				fmt.Println()
-			}
-		}}
-	rootCmd.AddCommand(newCmd)
-	rootCmd.AddCommand(lsCmd)
-	rootCmd.AddCommand(editconfigCmd)
-	rootCmd.AddCommand(dumpconfigCmd)
-	rootCmd.AddCommand(loadconfigCmd)
 }

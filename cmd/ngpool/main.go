@@ -18,12 +18,12 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
+	RootCmd.PersistentFlags().String("ServiceType", "", "")
 	ng := NewStratumServer()
 	getAttributes := func() map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	s := service.NewService("stratum", ng.config, getAttributes)
-	s.SetupCmds(RootCmd)
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the coinbuddy and coinserver",

@@ -28,7 +28,6 @@ func init() {
 		}
 	}
 	s := service.NewService("coinserver", cb.config, getAttributes)
-	s.SetupCmds(RootCmd)
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the coinbuddy and coinserver",

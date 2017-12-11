@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/icook/ngpool/pkg/service"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
 )
@@ -31,7 +32,7 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "Unable to deserialize template: %v", string(tmplRaw))
 		}
-		chainConfig, ok := CurrencyConfig[tmplKey.Currency]
+		chainConfig, ok := service.CurrencyConfig[tmplKey.Currency]
 		if !ok {
 			return nil, errors.Errorf("No currency config for %s", tmplKey.Currency)
 		}
@@ -150,7 +151,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	coinbase.Write(extraNonce)
 	coinbase.Write(j.coinbase2)
 	header := j.GetBlockHeader(nonce, coinbase.Bytes())
-	headerHsh, err := j.currencyConfig.PoWHash(header)
+	headerHsh, err := j.currencyConfig.Algo.PoWHash(header)
 	if err != nil {
 		return nil, false, err
 	}
@@ -191,7 +192,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 }
 
 type MainChainJob struct {
-	currencyConfig *ChainConfig
+	currencyConfig *service.ChainConfig
 	// For saving to database on solve
 	subsidy int64
 	height  int64
@@ -213,7 +214,7 @@ type MainChainJob struct {
 	cleanJobs bool
 }
 
-func NewMainChainJob(tmpl *BlockTemplate, config *ChainConfig) (*MainChainJob, error) {
+func NewMainChainJob(tmpl *BlockTemplate, config *service.ChainConfig) (*MainChainJob, error) {
 	target, err := tmpl.getTarget()
 	if err != nil {
 		return nil, errors.Wrap(err, "Error generating target")
@@ -302,7 +303,7 @@ func (j *MainChainJob) GetBlock(header []byte, coinbase []byte) []byte {
 }
 
 type AuxChainJob struct {
-	currencyConfig *ChainConfig
+	currencyConfig *service.ChainConfig
 	// For saving to database on solve
 	subsidy int64
 	height  int64
@@ -318,7 +319,7 @@ type AuxChainJob struct {
 	target                 *big.Int
 }
 
-func NewAuxChainJob(template *BlockTemplate, config *ChainConfig) (*AuxChainJob, error) {
+func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxChainJob, error) {
 	target, err := template.getTarget()
 	if err != nil {
 		return nil, errors.Wrap(err, "Error generating target")
