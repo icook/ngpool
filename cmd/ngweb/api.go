@@ -71,7 +71,9 @@ func (q *NgWebAPI) SetupGin() {
 	{
 		api.POST("tfa", q.postTFA)
 		api.POST("tfa_setup", q.postTFASetup)
+		api.POST("setpayout", q.postSetPayout)
 
+		api.GET("payoutaddrs", q.getPayout)
 		api.GET("me", q.getMe)
 	}
 

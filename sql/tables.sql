@@ -1,8 +1,8 @@
-DROP TABLE share;
-DROP TABLE block;
-DROP TABLE payout_address;
-DROP TABLE credit;
-DROP TABLE users;
+DROP TABLE share CASCADE;
+DROP TABLE block CASCADE;
+DROP TABLE payout_address CASCADE;
+DROP TABLE credit CASCADE;
+DROP TABLE users CASCADE;
 
 CREATE TABLE share
 (
@@ -43,12 +43,13 @@ CREATE TABLE users
 CREATE TABLE payout_address
 (
     user_id integer NOT NULL,
+    currency varchar,
     address varchar,
     CONSTRAINT user_id_fk FOREIGN KEY (user_id)
         REFERENCES users (id) MATCH SIMPLE
         ON UPDATE NO ACTION
         ON DELETE NO ACTION,
-    CONSTRAINT payout_address_pkey PRIMARY KEY (user_id, address)
+    CONSTRAINT payout_address_pkey PRIMARY KEY (user_id, currency)
 );
 
 CREATE TABLE credit
