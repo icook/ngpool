@@ -150,9 +150,10 @@ func (q *NgWebAPI) postLogin(c *gin.Context) {
 		return
 	}
 	q.apiSuccess(c, 200, res{
-		"user_id": user["id"],
-		"token":   tokenString,
-		"tfa":     user["tfa_enabled"],
+		"user_id":  user["id"],
+		"username": user["username"],
+		"token":    tokenString,
+		"tfa":      user["tfa_enabled"],
 		// TODO: Refactor to tfa_enabled
 	})
 }
