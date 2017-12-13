@@ -7,6 +7,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+type PayoutAddress struct {
+	Address  string `validate:"required" json:"address"`
+	Currency string `validate:"required" json:"currency"`
+}
+
 func (q *NgWebAPI) getMe(c *gin.Context) {
 	userID := c.GetInt("userID")
 	user := make(map[string]interface{})
@@ -17,12 +22,22 @@ func (q *NgWebAPI) getMe(c *gin.Context) {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
 	}
-	q.apiSuccess(c, 200, res{"user": user})
-}
 
-type PayoutAddress struct {
-	Address  string `validate:"required" json:"address"`
-	Currency string `validate:"required" json:"currency"`
+	var payoutAddrs []PayoutAddress
+	err = q.db.Select(&payoutAddrs,
+		`SELECT currency, address FROM payout_address WHERE user_id = $1`, userID)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	addrMap := map[string]string{}
+	for _, currency := range service.CurrencyConfig {
+		addrMap[currency.Code] = ""
+	}
+	for _, addr := range payoutAddrs {
+		addrMap[addr.Currency] = addr.Address
+	}
+	q.apiSuccess(c, 200, res{"user": user, "payout_addresses": addrMap})
 }
 
 func (q *NgWebAPI) postSetPayout(c *gin.Context) {
@@ -56,16 +71,4 @@ func (q *NgWebAPI) postSetPayout(c *gin.Context) {
 		return
 	}
 	c.Status(200)
-}
-
-func (q *NgWebAPI) getPayout(c *gin.Context) {
-	userID := c.GetInt("userID")
-	var payoutAddrs []PayoutAddress
-	err := q.db.Select(&payoutAddrs,
-		`SELECT currency, address FROM payout_address WHERE user_id = $1`, userID)
-	if err != nil {
-		q.apiException(c, 500, errors.WithStack(err), SQLError)
-		return
-	}
-	q.apiSuccess(c, 200, res{"payout_addresses": payoutAddrs})
 }
