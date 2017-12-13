@@ -59,6 +59,7 @@ func (q *NgWebAPI) postSetPayout(c *gin.Context) {
 		q.apiError(c, 400, APIError{
 			Code:  "invalid_address",
 			Title: "Address given is not valid for that network"})
+		return
 	}
 	_, err = q.db.Exec(
 		`INSERT INTO payout_address
