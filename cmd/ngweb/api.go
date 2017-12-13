@@ -4,9 +4,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
+	"github.com/itsjamie/gin-cors"
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/viper"
 	"gopkg.in/go-playground/validator.v9"
+	"time"
 )
 
 var validate = validator.New()
@@ -62,6 +64,15 @@ func (q *NgWebAPI) SetupGin() {
 	// Setup our database connection
 	// Configure webserver
 	r := gin.Default()
+	r.Use(cors.Middleware(cors.Config{
+		Origins:         "*",
+		Methods:         "GET, PUT, POST, DELETE",
+		RequestHeaders:  "Origin, Authorization, Content-Type",
+		ExposedHeaders:  "",
+		MaxAge:          50 * time.Second,
+		Credentials:     true,
+		ValidateHeaders: false,
+	}))
 
 	r.POST("/v1/register", q.postRegister)
 	r.POST("/v1/login", q.postLogin)

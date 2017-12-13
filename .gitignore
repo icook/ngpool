@@ -4,3 +4,4 @@ vendor/*
 /ngcoinbuddy
 /ngstratum
 /ngweb
+gin-bin
