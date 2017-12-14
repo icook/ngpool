@@ -132,6 +132,7 @@ func (n *StratumServer) Start() {
 	level, err := log.LvlFromString(levelConfig)
 	if err != nil {
 		log.Crit("Unable to parse log level", "configval", levelConfig, "err", err)
+		os.Exit(1)
 	}
 	handler := log.CallerFileHandler(log.StdoutHandler)
 	handler = log.LvlFilterHandler(level, handler)
@@ -160,6 +161,7 @@ func (n *StratumServer) Start() {
 	updates, err := n.service.ServiceWatcher("coinserver")
 	if err != nil {
 		log.Crit("Failed to start coinserver watcher", "err", err)
+		os.Exit(1)
 	}
 	go n.HandleCoinserverWatcherUpdates(updates, tmplKeys)
 	go n.service.KeepAlive()
@@ -174,7 +176,6 @@ func (n *StratumServer) Start() {
 
 func (n *StratumServer) ListenShares() {
 	log.Debug("Starting ListenShares")
-	chainName := n.config.GetString("ShareChainName")
 	for {
 		share := <-n.newShare
 		log.Debug("Got share", "share", share)
@@ -182,8 +183,8 @@ func (n *StratumServer) ListenShares() {
 			n.blockCast[currencyCode].Submit(block)
 			_, err := n.db.Exec(
 				`INSERT INTO block
-				(height, currency, hash, powhash, subsidy, mined_at, mined_by, difficulty, chain)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				(height, currency, hash, powhash, subsidy, mined_at, mined_by, difficulty)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 				block.height,
 				currencyCode,
 				hex.EncodeToString(block.getBlockHash().Bytes()),
@@ -191,8 +192,7 @@ func (n *StratumServer) ListenShares() {
 				block.subsidy,
 				share.time,
 				share.username,
-				block.difficulty.String(),
-				chainName)
+				block.difficulty.String())
 			if err != nil {
 				log.Error("Failed to save block", "err", err)
 			}
@@ -200,7 +200,7 @@ func (n *StratumServer) ListenShares() {
 		_, err := n.db.Exec(
 			`INSERT INTO share (username, difficulty, mined_at, chain)
 			VALUES ($1, $2, $3, $4)`,
-			share.username, share.difficulty, share.time, chainName)
+			share.username, share.difficulty, share.time, n.shareChain.Name)
 		if err != nil {
 			log.Error("Failed to save share", "err", err)
 		}
@@ -458,6 +458,7 @@ func (n *StratumServer) ListenMiners() {
 	listener, err := net.Listen("tcp", endpoint)
 	if err != nil {
 		log.Crit("Failed to listen stratum", "err", err)
+		os.Exit(1)
 	}
 	log.Info("Listening stratum", "endpoint", endpoint)
 	defer listener.Close()

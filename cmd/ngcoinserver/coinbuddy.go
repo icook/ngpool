@@ -14,6 +14,7 @@ import (
 	_ "github.com/spf13/viper/remote"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ func (c *CoinBuddy) Run() {
 	level, err := log.LvlFromString(levelConfig)
 	if err != nil {
 		log.Crit("Unable to parse log level", "configval", levelConfig, "err", err)
+		os.Exit(1)
 	}
 	handler := log.CallerFileHandler(log.StdoutHandler)
 	handler = log.LvlFilterHandler(level, handler)
@@ -83,6 +85,7 @@ func (c *CoinBuddy) Run() {
 	err = c.RunCoinserver()
 	if err != nil {
 		log.Crit("Coinserver never came up for 90 seconds", "err", err)
+		os.Exit(1)
 	}
 	c.generateTemplateExtras()
 	c.RunBlockListener()
@@ -101,17 +104,20 @@ func (c *CoinBuddy) generateTemplateExtras() {
 		if err != nil {
 			log.Crit("Failed to run getauxblock, are you sure this coin is merge mineable?",
 				"err", err)
+			os.Exit(1)
 		}
 		var auxWork map[string]interface{}
 		err = json.Unmarshal(resp, &auxWork)
 		if err != nil {
 			log.Crit("Failed to deserialize getauxblock", "err", err)
+			os.Exit(1)
 		}
 		templateExtras["chainid"] = auxWork["chainid"]
 	}
 	serialized, err := json.Marshal(templateExtras)
 	if err != nil {
 		log.Crit("Error serializing templateExtras", "err", err)
+		os.Exit(1)
 	}
 	c.templateExtras = []byte{}
 	c.templateExtras = append(c.templateExtras, []byte(",\"extras\":")...)
@@ -252,6 +258,7 @@ func (c *CoinBuddy) RunCoinserver() error {
 	err := c.cs.Run()
 	if err != nil {
 		log.Crit("Failed to start coinserver", "err", err)
+		os.Exit(1)
 	}
 	return c.cs.WaitUntilUp()
 }

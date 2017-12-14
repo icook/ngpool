@@ -87,6 +87,7 @@ func editFile(fpath string) string {
 	editorPath, err := exec.LookPath(editor)
 	if err != nil {
 		log.Crit("Failed editor path lookup", "err", err, "editor", editor)
+		os.Exit(1)
 	}
 	cmd := exec.Command(editorPath, fpath)
 	cmd.Stdin = os.Stdin
@@ -95,6 +96,7 @@ func editFile(fpath string) string {
 	err = cmd.Start()
 	if err != nil {
 		log.Crit("Failed to start editor", "err", err)
+		os.Exit(1)
 	}
 	err = cmd.Wait()
 
@@ -103,6 +105,7 @@ func editFile(fpath string) string {
 	newConfig := string(newConfigByte)
 	if err != nil {
 		log.Crit("Somehow we fail to read a file we just made...", "err", err)
+		os.Exit(1)
 	}
 	return newConfig
 }
@@ -116,10 +119,12 @@ func mktmp(contents string) *os.File {
 	if os.IsExist(err) {
 		log.Crit("Failed to make file, maybe another editor is open now?",
 			"fname", fname, "err", err)
+		os.Exit(1)
 	}
 	_, err = tmpFile.WriteString(contents)
 	if err != nil {
 		log.Crit("Failed to write tmp file", "err", err)
+		os.Exit(1)
 	}
 	tmpFile.Close()
 	return tmpFile
@@ -131,6 +136,7 @@ func editKey(etcdKeys client.KeysAPI, configKeyPath string) {
 	var currentVal = ""
 	if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeKeyNotFound {
 		log.Crit("No /config/common, starting empty")
+		os.Exit(1)
 	} else if err != nil {
 		log.Crit("Failed fetching config", "err", err)
 		os.Exit(1)
@@ -144,6 +150,7 @@ func editKey(etcdKeys client.KeysAPI, configKeyPath string) {
 	_, err = etcdKeys.Set(context.Background(), configKeyPath, newConfig, nil)
 	if err != nil {
 		log.Crit("Failed pushing config", "err", err)
+		os.Exit(1)
 	}
 	log.Info("Successfully pushed config", "keypath", configKeyPath)
 }

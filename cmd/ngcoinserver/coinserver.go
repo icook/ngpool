@@ -63,6 +63,7 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string, coinser
 	client, err := rpcclient.New(connCfg, nil)
 	if err != nil {
 		log.Crit("Failed to initialize rpcclient", "err", err)
+		os.Exit(1)
 	}
 	c.client = client
 

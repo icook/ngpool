@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/viper"
 	"gopkg.in/go-playground/validator.v9"
+	"os"
 	"time"
 )
 
@@ -46,6 +47,7 @@ func (q *NgWebAPI) ParseConfig() {
 	db, err := sqlx.Connect("postgres", config.GetString("DbConnectionString"))
 	if err != nil {
 		q.log.Crit("Failed connect db", "err", err)
+		os.Exit(1)
 	}
 	q.db = db
 
@@ -53,6 +55,7 @@ func (q *NgWebAPI) ParseConfig() {
 	level, err := log.LvlFromString(levelConfig)
 	if err != nil {
 		log.Crit("Unable to parse log level", "configval", levelConfig, "err", err)
+		os.Exit(1)
 	}
 	handler := log.CallerFileHandler(log.StdoutHandler)
 	handler = log.LvlFilterHandler(level, handler)

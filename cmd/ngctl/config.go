@@ -7,6 +7,7 @@ import (
 	"github.com/fatih/color"
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/cobra"
+	"os"
 	"strings"
 )
 
@@ -59,6 +60,7 @@ func setupConfigCommands(cmd *cobra.Command, serviceType string) {
 			res, err := etcdKeys.Get(context.Background(), "/config/"+serviceType, getOpt)
 			if err != nil {
 				log.Crit("Unable to contact etcd", "err", err)
+				os.Exit(1)
 			}
 			for _, node := range res.Node.Nodes {
 				lbi := strings.LastIndexByte(node.Key, '/') + 1
@@ -87,6 +89,7 @@ func setupConfigCommands(cmd *cobra.Command, serviceType string) {
 				context.Background(), keyPath, newConfig, nil)
 			if err != nil {
 				log.Crit("Failed pushing config", "err", err)
+				os.Exit(1)
 			}
 			log.Info("Successfully pushed config", "keypath", keyPath)
 		}}

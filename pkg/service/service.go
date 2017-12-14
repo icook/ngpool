@@ -64,6 +64,7 @@ func NewService(namespace string, config *viper.Viper) *Service {
 	etcd, err := client.New(cfg)
 	if err != nil {
 		log.Crit("Failed to make etcd client", "err", err)
+		os.Exit(1)
 	}
 	s.etcd = etcd
 	s.etcdKeys = client.NewKeysAPI(s.etcd)
@@ -71,6 +72,7 @@ func NewService(namespace string, config *viper.Viper) *Service {
 	res, err := s.etcdKeys.Get(context.Background(), "/config/common", nil)
 	if err != nil {
 		log.Crit("Unable to contact etcd", "err", err)
+		os.Exit(1)
 	}
 	s.config.MergeConfig(strings.NewReader(res.Node.Value))
 
@@ -243,6 +245,7 @@ func (s *Service) getDefaultConfig(common bool) string {
 		b, err := yaml.Marshal(s.config.AllSettings())
 		if err != nil {
 			log.Crit("Failed to serialize config", "err", err)
+			os.Exit(1)
 		}
 		return string(b)
 	}
