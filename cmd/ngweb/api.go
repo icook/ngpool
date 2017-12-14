@@ -8,7 +8,11 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/spf13/viper"
 	"gopkg.in/go-playground/validator.v9"
+	"io/ioutil"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 )
 
@@ -27,29 +31,24 @@ func NewNgWebAPI() *NgWebAPI {
 	var ngw = NgWebAPI{
 		log: log.New(),
 	}
+	config := viper.New()
+	config.SetConfigType("yaml")
+	config.SetDefault("LogLevel", "info")
+	config.SetDefault("StratumBind", "127.0.0.1:3333")
+	config.SetDefault("DbConnectionString",
+		"user=ngpool dbname=ngpool sslmode=disable password=knight")
+	ngw.config = config
+
 	return &ngw
 }
 
 func (q *NgWebAPI) ParseConfig() {
 	// Load our configuration info
-	config := viper.New()
-	config.SetConfigType("yaml")
-	config.SetDefault("LogLevel", "info")
-	config.SetDefault("DbConnectionString",
-		"user=ngpool dbname=ngpool sslmode=disable password=knight")
-	q.config = config
-	q.service = service.NewService("api", config)
+	q.service = service.NewService("api", q.config)
 	q.service.SetLabels(map[string]interface{}{
-		"endpoint": config.GetString("StratumBind"),
+		"endpoint": q.config.GetString("StratumBind"),
 	})
 	// TODO: Check for secure JWTSecret
-
-	db, err := sqlx.Connect("postgres", config.GetString("DbConnectionString"))
-	if err != nil {
-		q.log.Crit("Failed connect db", "err", err)
-		os.Exit(1)
-	}
-	q.db = db
 
 	levelConfig := q.config.GetString("LogLevel")
 	level, err := log.LvlFromString(levelConfig)
@@ -61,6 +60,15 @@ func (q *NgWebAPI) ParseConfig() {
 	handler = log.LvlFilterHandler(level, handler)
 	q.log.SetHandler(handler)
 	log.Info("Set log level", "level", level)
+}
+
+func (q *NgWebAPI) ConnectDB() {
+	db, err := sqlx.Connect("postgres", q.config.GetString("DbConnectionString"))
+	if err != nil {
+		q.log.Crit("Failed connect db", "err", err)
+		os.Exit(1)
+	}
+	q.db = db
 }
 
 func (q *NgWebAPI) SetupGin() {
@@ -91,4 +99,24 @@ func (q *NgWebAPI) SetupGin() {
 	}
 
 	q.engine = r
+}
+
+func projectBase() string {
+	_, b, _, _ := runtime.Caller(0)
+	basepath := filepath.Dir(b)
+	return filepath.Join(basepath, "../../")
+}
+
+func (q *NgWebAPI) LoadFixtures(fixtures ...string) {
+	for _, fileName := range fixtures {
+		file, err := ioutil.ReadFile(filepath.Join(projectBase(), "sql", fileName) + ".sql")
+		if err != nil {
+			panic(err)
+		}
+		commands := strings.Split(string(file), ";")
+
+		for _, command := range commands {
+			q.db.MustExec(command)
+		}
+	}
 }
