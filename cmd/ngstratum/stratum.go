@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/coreos/etcd/client"
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/btcd/rpcclient"
 	"github.com/icook/ngpool/pkg/service"
@@ -21,6 +20,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -60,10 +60,9 @@ type TemplateKey struct {
 }
 
 type StratumServer struct {
-	config   *viper.Viper
-	etcd     client.Client
-	etcdKeys client.KeysAPI
-	db       *sqlx.DB
+	config     *viper.Viper
+	db         *sqlx.DB
+	shareChain *service.ShareChainConfig
 
 	coinserverWatchers map[string]*CoinserverWatcher
 	newShare           chan *Share
@@ -110,10 +109,22 @@ func NewStratumServer() *StratumServer {
 }
 
 func (n *StratumServer) Start() {
+	scn := n.config.GetString("ShareChainName")
+	sc, ok := service.ShareChain[scn]
+	if !ok {
+		keys := []string{}
+		for key, _ := range service.ShareChain {
+			keys = append(keys, key)
+		}
+		log.Crit("Invalid ShareChainName", "options", keys, "setting", scn)
+		os.Exit(1)
+	}
+	n.shareChain = sc
+
 	db, err := sqlx.Connect("postgres", n.config.GetString("DbConnectionString"))
 	if err != nil {
 		log.Crit("Failed to connect to db", "err", err)
-		panic(err)
+		os.Exit(1)
 	}
 	n.db = db
 

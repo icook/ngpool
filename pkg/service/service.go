@@ -2,20 +2,13 @@ package service
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/coreos/etcd/client"
-	"github.com/mitchellh/mapstructure"
-	"strings"
-	//	"github.com/satori/go.uuid.git"
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -29,7 +22,6 @@ type Service struct {
 	etcdKeys      client.KeysAPI
 	configKeyPath string
 	statusKeyPath string
-	editor        string
 }
 
 type ServiceStatusUpdate struct {
@@ -49,7 +41,6 @@ func NewService(namespace string, config *viper.Viper) *Service {
 	s := &Service{
 		namespace: namespace,
 		config:    config,
-		editor:    "vi",
 	}
 	s.SetServiceID(s.config.GetString("ServiceID"))
 	s.config.SetDefault("EtcdEndpoint", []string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
@@ -84,6 +75,7 @@ func NewService(namespace string, config *viper.Viper) *Service {
 	s.config.MergeConfig(strings.NewReader(res.Node.Value))
 
 	s.SetupCurrencies()
+	s.SetupShareChains()
 	return s
 }
 

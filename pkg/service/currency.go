@@ -2,13 +2,11 @@ package service
 
 import (
 	"encoding/hex"
-	"fmt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/mitchellh/mapstructure"
-	//	"github.com/satori/go.uuid.git"
 	log "github.com/inconshreveable/log15"
+	"github.com/mitchellh/mapstructure"
 )
 
 type ChainConfigDecoder struct {
@@ -41,8 +39,6 @@ func (s *Service) SetupCurrencies() {
 			panic(err)
 		}
 		log.Debug("Decoded currency config", "config", config, "rawConfig", rawConfig)
-		fmt.Printf("%#v", rawConfig)
-		fmt.Printf("%#v", err)
 
 		params := &chaincfg.Params{
 			Name: config.Code,

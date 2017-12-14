@@ -9,7 +9,8 @@ CREATE TABLE share
     username varchar NOT NULL,
     difficulty double precision NOT NULL,
     mined_at timestamp NOT NULL,
-    chain varchar NOT NULL
+    sharechain varchar NOT NULL
+    currency varchar NOT NULL
 );
 
 CREATE TABLE block
@@ -22,7 +23,7 @@ CREATE TABLE block
     mined_at timestamp NOT NULL,
     mined_by varchar NOT NULL,
     difficulty double precision NOT NULL,
-    chain varchar NOT NULL,
+    credited boolean NOT NULL DEFAULT false,
     CONSTRAINT block_pkey PRIMARY KEY (hash)
 );
 

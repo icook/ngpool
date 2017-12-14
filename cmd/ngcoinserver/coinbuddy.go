@@ -219,7 +219,7 @@ func (c *CoinBuddy) RunBlockListener() {
 	go func() {
 		if err := c.blockListener.ListenAndServe(); err != nil {
 			// cannot panic, because this probably is an intentional close
-			log.Info("Httpserver: ListenAndServe()", "err", err)
+			log.Warn("Httpserver: ListenAndServe()", "err", err)
 		}
 	}()
 	endpoint := fmt.Sprintf("http://%s/notif", c.config.GetString("BlockListenerBind"))

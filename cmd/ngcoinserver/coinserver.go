@@ -135,7 +135,7 @@ func (c *Coinserver) kill(proc *os.Process) error {
 	// the process exits before wait call runs then we get an error that is
 	// annoying to test for, so we just don't worry about it
 	proc.Wait()
-	log.Info("Killed (hopefully) pid ", proc.Pid)
+	log.Info("Killed (hopefully)", "pid", proc.Pid)
 	return nil
 }
 
