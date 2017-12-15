@@ -130,26 +130,31 @@ func mktmp(contents string) *os.File {
 	return tmpFile
 }
 
-func editKey(etcdKeys client.KeysAPI, configKeyPath string) {
+func getKey(etcdKeys client.KeysAPI, configKeyPath string) string {
 	// Get current config
 	configResp, err := etcdKeys.Get(context.Background(), configKeyPath, nil)
 	var currentVal = ""
 	if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeKeyNotFound {
-		log.Crit("No /config/common, starting empty")
-		os.Exit(1)
+		log.Warn("Key empty, starting empty", "key", configKeyPath)
 	} else if err != nil {
 		log.Crit("Failed fetching config", "err", err)
 		os.Exit(1)
 	} else {
 		currentVal = string(configResp.Node.Value)
 	}
+	return currentVal
+}
+
+func editKey(etcdKeys client.KeysAPI, configKeyPath string) {
+	currentVal := getKey(etcdKeys, configKeyPath)
 	newConfig, save := modifyLoop(currentVal, configKeyPath)
 	if !save {
 		return
 	}
-	_, err = etcdKeys.Set(context.Background(), configKeyPath, newConfig, nil)
+	_, err := etcdKeys.Set(context.Background(), configKeyPath, newConfig, nil)
 	if err != nil {
-		log.Crit("Failed pushing config", "err", err)
+		log.Crit("Failed pushing config, dumping", "err", err)
+		fmt.Println(newConfig)
 		os.Exit(1)
 	}
 	log.Info("Successfully pushed config", "keypath", configKeyPath)

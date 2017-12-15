@@ -19,6 +19,13 @@ func init() {
 		},
 	}
 	commonCmd.AddCommand(&cobra.Command{
+		Use: "dump",
+		Run: func(cmd *cobra.Command, args []string) {
+			etcdKeys := getEtcdKeys()
+			fmt.Print(getKey(etcdKeys, "/config/common"))
+		},
+	})
+	commonCmd.AddCommand(&cobra.Command{
 		Use: "edit",
 		Run: func(cmd *cobra.Command, args []string) {
 			etcdKeys := getEtcdKeys()
