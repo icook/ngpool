@@ -158,16 +158,39 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *Block) ([]*Credit, e
 	feeUserID := 1
 	q.log.Info("Calculated required shares",
 		"accuracy", acc, "requiredShares", requiredDiffShares, "diff", block.Difficulty, "diff1", block.algoConfig.Diff1)
-	type Share struct {
-		Difficulty float64
-		UserID     *int `db:"id"`
+
+	userShares, total, err := q.collectShares(requiredDiffShares, feeUserID, sc.Name, block.MinedAt)
+	if err != nil {
+		return nil, err
 	}
+
+	q.log.Info("Computing credits for users")
+	var credits []*Credit
+	for userID, shares := range userShares {
+		fract := shares / total
+		c := &Credit{
+			UserID:     userID,
+			Difficulty: shares,
+			Amount:     int64(float64(sc.subsidyPayable) * fract),
+			Fee:        float64(sc.subsidyFee) * fract,
+		}
+		fmt.Printf("%+v\n", c)
+		credits = append(credits, c)
+	}
+	return credits, nil
+}
+
+func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
+	shareChainName string, start time.Time) (map[int]float64, float64, error) {
 	var (
 		accumulatedShares float64 = 0
 		userShares                = map[int]float64{}
 		selectOffset              = 0
 	)
-ShareAccumulator:
+	type Share struct {
+		Difficulty float64
+		UserID     *int `db:"id"`
+	}
 	for {
 		var shares []Share
 		err := q.db.Select(&shares,
@@ -176,9 +199,9 @@ ShareAccumulator:
 			WHERE share.mined_at < $1 AND share.sharechain = $2
 			ORDER BY share.mined_at DESC
 			LIMIT 100 OFFSET $3`,
-			block.MinedAt, sc.Name, selectOffset)
+			start, shareChainName, selectOffset)
 		if err != nil && err != sql.ErrNoRows {
-			return nil, err
+			return nil, 0, err
 		}
 		if len(shares) == 0 {
 			q.log.Info("Exiting share collection, no more shares")
@@ -195,28 +218,15 @@ ShareAccumulator:
 
 			// Exit if we have the amount of shares we need
 			accumulatedShares += share.Difficulty
-			if accumulatedShares >= requiredDiffShares {
+			if accumulatedShares >= shareCount {
 				// TODO: With very large share difficulties and low block diff
 				// we might have unbalanced, we should remove the excess ideally
-				break ShareAccumulator
+				return userShares, accumulatedShares, nil
 			}
 		}
 		selectOffset += 100
 	}
-	q.log.Info("Computing credits for users")
-	var credits []*Credit
-	for userID, shares := range userShares {
-		fract := shares / accumulatedShares
-		c := &Credit{
-			UserID:     userID,
-			Difficulty: shares,
-			Amount:     int64(float64(sc.subsidyPayable) * fract),
-			Fee:        float64(sc.subsidyFee) * fract,
-		}
-		fmt.Printf("%+v\n", c)
-		credits = append(credits, c)
-	}
-	return credits, nil
+	return userShares, accumulatedShares, nil
 }
 
 func (q *NgWebAPI) GenerateCredits() {
