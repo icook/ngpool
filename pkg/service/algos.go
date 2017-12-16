@@ -16,6 +16,12 @@ type Algo struct {
 	Diff1   *big.Float
 }
 
+func (a *Algo) Diff1SharesForDiff(blockTarget float64) (float64, big.Accuracy) {
+	blockTargetBig := big.NewFloat(blockTarget)
+	diff1 := new(big.Float).Set(a.Diff1)
+	return diff1.Quo(diff1, blockTargetBig).Float64()
+}
+
 func NewAlgoConfig(name string, diff1Hex string, powFunc HashFunc) *Algo {
 	diff1 := big.Float{}
 	_, _, err := diff1.Parse(diff1Hex, 16)

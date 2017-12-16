@@ -136,6 +136,7 @@ func (c *StratumClient) writeLoop() {
 			// Generate combined extranonce and diff target
 			extranonce := append(c.Extranonce1(), submission.Extranonce2...)
 
+			// TODO: Use the diff1 from algo configuration
 			targetFl := big.Float{}
 			targetFl.SetFloat64(clientJob.difficulty)
 			targetFl.Mul(&diff1, &targetFl)

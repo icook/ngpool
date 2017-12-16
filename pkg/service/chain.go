@@ -22,6 +22,7 @@ func (s *Service) SetupShareChains() {
 			panic(err)
 		}
 		log.Debug("Decoded share chain config", "chain", chain, "rawConfig", rawConfig)
+		// TODO: Ensure supported PayoutMethod to avoid misconfiguration
 		ShareChain[chain.Name] = &chain
 	}
 }

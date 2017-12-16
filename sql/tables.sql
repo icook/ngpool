@@ -1,21 +1,22 @@
-DROP TABLE share CASCADE;
-DROP TABLE block CASCADE;
-DROP TABLE payout_address CASCADE;
-DROP TABLE credit CASCADE;
-DROP TABLE users CASCADE;
+DROP TABLE IF EXISTS share CASCADE;
+DROP TABLE IF EXISTS block CASCADE;
+DROP TABLE IF EXISTS payout_address CASCADE;
+DROP TABLE IF EXISTS credit CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 
 CREATE TABLE share
 (
     username varchar NOT NULL,
     difficulty double precision NOT NULL,
     mined_at timestamp NOT NULL,
-    sharechain varchar NOT NULL
+    sharechain varchar NOT NULL,
     currency varchar NOT NULL
 );
 
 CREATE TABLE block
 (
     currency varchar NOT NULL,
+    powalgo varchar NOT NULL,
     height bigint NOT NULL,
     hash varchar NOT NULL,
     powhash varchar NOT NULL,
@@ -57,10 +58,10 @@ CREATE TABLE credit
 (
     id SERIAL NOT NULL,
     user_id integer NOT NULL,
-    credit numeric NOT NULL,
+    amount numeric NOT NULL,
     currency varchar NOT NULL,
     blockhash varchar NOT NULL,
-    address varchar,
+    sharechain varchar NOT NULL,
     CONSTRAINT unique_credit UNIQUE (user_id, blockhash),
     CONSTRAINT blockhash_fk FOREIGN KEY (blockhash)
         REFERENCES block (hash) MATCH SIMPLE
