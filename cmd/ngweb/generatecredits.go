@@ -268,28 +268,26 @@ func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
 	return userShares, accumulatedShares, nil
 }
 
-func (q *NgWebAPI) GenerateCredits() {
+func (q *NgWebAPI) GenerateCredits() error {
 	var blocks []Block
 	err := q.db.Select(&blocks,
 		`SELECT currency, height, hash, powalgo, subsidy, mined_at, difficulty
 		FROM block WHERE credited = false`)
 	if err != nil {
-		q.log.Crit("Failed to select blocks", "err", err)
-		return
+		return err
 	}
 	for _, block := range blocks {
 		config, ok := service.AlgoConfig[block.PowAlgo]
 		if !ok {
-			q.log.Crit("Unknown PoW Algo", "algo", block.PowAlgo)
-			return
+			return errors.Errorf("Couldn't locate pow alogo %s", block.PowAlgo)
 		}
 		block.algoConfig = config
 		q.log.Debug("Loaded AlgoConfig", "config", config, "block", block.Hash)
 
 		err := q.processBlock(&block)
 		if err != nil {
-			q.log.Crit("Block payout failed", "err", err)
-			return
+			return err
 		}
 	}
+	return nil
 }

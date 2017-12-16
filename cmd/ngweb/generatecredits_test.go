@@ -87,6 +87,9 @@ Currencies:
 	ng := NewHarness(t, config)
 	defer ng.Cleanup()
 	ng.LoadFixtures("user", "simple_solve")
-	ng.GenerateCredits()
+	err := ng.GenerateCredits()
+	if err != nil {
+		panic(err)
+	}
 	t.FailNow()
 }
