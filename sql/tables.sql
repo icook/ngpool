@@ -25,6 +25,7 @@ CREATE TABLE block
     mined_by varchar NOT NULL,
     difficulty double precision NOT NULL,
     credited boolean NOT NULL DEFAULT false,
+    payout_data json DEFAULT '{}'::JSON NOT NULL,
     CONSTRAINT block_pkey PRIMARY KEY (hash)
 );
 

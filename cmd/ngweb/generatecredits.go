@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/icook/ngpool/pkg/service"
 	"github.com/pkg/errors"
@@ -25,13 +26,10 @@ type Block struct {
 	Currency   string
 	Height     int64
 	Hash       string
-	Powhash    string
 	PowAlgo    string
 	Subsidy    int64
 	MinedAt    time.Time `db:"mined_at"`
-	MinedBy    string    `db:"mined_by"`
 	Difficulty float64
-	Credited   bool
 
 	algoConfig    *service.Algo
 	lastBlockTime time.Time
@@ -47,6 +45,7 @@ type ShareChainPayout struct {
 	subsidy        int64
 	subsidyPayable int64
 	subsidyFee     int64
+	data           map[string]interface{}
 }
 
 type Credit struct {
@@ -138,10 +137,42 @@ func (q *NgWebAPI) processBlock(block *Block) error {
 				VALUES ($1, $2, $3, $4, $5)`,
 				c.UserID, c.Amount, block.Currency, block.Hash, sc.Name)
 			if err != nil {
+				tx.Rollback()
 				return err
 			}
 		}
 	}
+
+	// This structure will get loaded into the database after payout. It's
+	// visible on the frontend to help users and admins understand how payouts
+	// are operating, debugging, and testing
+	payoutData := map[string]interface{}{
+		"credited_at":                time.Now(),
+		"sharechain_round_amount":    rounded,
+		"sharechain_round_recipient": sharechains[0].Name,
+		"sharechains":                sharechains,
+		"sharechain_total":           shareChainsTotal,
+		"last_block_time":            block.lastBlockTime,
+	}
+	serial, err := json.Marshal(payoutData)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	result, err := tx.Exec(
+		`UPDATE block SET credited = true, payout_data = $1
+		WHERE hash = $2`,
+		serial, block.Hash)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	affect, err := result.RowsAffected()
+	if err == nil && affect == 0 {
+		tx.Rollback()
+		return errors.New("Failed to update block information")
+	}
+
 	err = tx.Commit()
 	if err != nil {
 		return err
@@ -151,17 +182,25 @@ func (q *NgWebAPI) processBlock(block *Block) error {
 }
 
 func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *Block) ([]*Credit, error) {
-	requiredDiffShares, acc := block.algoConfig.Diff1SharesForDiff(block.Difficulty)
-	// Static last N of 2 for now TODO: Upgrade this
-	requiredDiffShares *= 2
+	sharesToFind, acc := block.algoConfig.Diff1SharesForDiff(block.Difficulty)
+	// Static last N of 2 for now TODO: Make this configurable
+	var n float64 = 2
+	sharesToFind *= n
 	// Static fee user id, needs to be configurable as well
 	feeUserID := 1
 	q.log.Info("Calculated required shares",
-		"accuracy", acc, "requiredShares", requiredDiffShares, "diff", block.Difficulty, "diff1", block.algoConfig.Diff1)
+		"accuracy", acc, "requiredShares", sharesToFind, "diff", block.Difficulty, "diff1", block.algoConfig.Diff1)
 
-	userShares, total, err := q.collectShares(requiredDiffShares, feeUserID, sc.Name, block.MinedAt)
+	userShares, total, err := q.collectShares(sharesToFind, feeUserID, sc.Name, block.MinedAt)
 	if err != nil {
 		return nil, err
+	}
+	sc.data = map[string]interface{}{
+		"type":         "pplns",
+		"n":            n,
+		"diff1":        block.algoConfig.Diff1,
+		"sharesToFind": sharesToFind,
+		"sharesFound":  total,
 	}
 
 	q.log.Info("Computing credits for users")
@@ -231,7 +270,9 @@ func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
 
 func (q *NgWebAPI) GenerateCredits() {
 	var blocks []Block
-	err := q.db.Select(&blocks, "SELECT * FROM block WHERE credited = false")
+	err := q.db.Select(&blocks,
+		`SELECT currency, height, hash, powalgo, subsidy, mined_at, difficulty
+		FROM block WHERE credited = false`)
 	if err != nil {
 		q.log.Crit("Failed to select blocks", "err", err)
 		return
