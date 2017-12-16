@@ -32,6 +32,7 @@ type ServiceStatusUpdate struct {
 }
 
 type ServiceStatus struct {
+	ServiceID  string
 	Status     map[string]interface{}
 	Labels     map[string]interface{}
 	UpdateTime time.Time
@@ -97,16 +98,18 @@ func (s *Service) parseNode(node *client.Node) (string, *ServiceStatus) {
 	serviceID := node.Key[lbi:]
 	var status ServiceStatus
 	json.Unmarshal([]byte(node.Value), &status)
+	status.ServiceID = serviceID
 	return serviceID, &status
 }
 
-func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdate, error) {
-	var (
-		services           map[string]*ServiceStatus = make(map[string]*ServiceStatus)
-		watchStatusKeypath string                    = "/status/" + watchNamespace
-		// We assume you have no more than 1000 services... Sloppy!
-		updates chan ServiceStatusUpdate = make(chan ServiceStatusUpdate, 1000)
-	)
+func (s *Service) LoadServices(namespace string) (map[string]*ServiceStatus, error) {
+	statuses, _, err := s.loadServices(namespace)
+	return statuses, err
+}
+
+func (s *Service) loadServices(namespace string) (map[string]*ServiceStatus, uint64, error) {
+	var services map[string]*ServiceStatus = make(map[string]*ServiceStatus)
+	var watchStatusKeypath string = "/status/" + namespace
 
 	getOpt := &client.GetOptions{
 		Recursive: true,
@@ -118,32 +121,50 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 		_, err := s.etcdKeys.Set(context.Background(), watchStatusKeypath,
 			"", &client.SetOptions{Dir: true})
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	} else if err != nil {
-		return nil, err
+		return nil, 0, err
 	} else {
 		for _, node := range res.Node.Nodes {
 			serviceID, serviceStatus := s.parseNode(node)
 			services[serviceID] = serviceStatus
-			updates <- ServiceStatusUpdate{
-				ServiceType: watchNamespace,
-				ServiceID:   serviceID,
-				Status:      serviceStatus,
-				Action:      "added",
-			}
+		}
+	}
+	return services, res.Index, nil
+}
+
+func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdate, error) {
+	var (
+		services           map[string]*ServiceStatus = make(map[string]*ServiceStatus)
+		watchStatusKeypath string                    = "/status/" + watchNamespace
+		// We assume you have no more than 1000 services... Sloppy!
+		updates chan ServiceStatusUpdate = make(chan ServiceStatusUpdate, 1000)
+	)
+
+	services, startIndex, err := s.loadServices(watchNamespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, svc := range services {
+		services[svc.ServiceID] = svc
+		updates <- ServiceStatusUpdate{
+			ServiceType: watchNamespace,
+			ServiceID:   svc.ServiceID,
+			Status:      svc,
+			Action:      "added",
 		}
 	}
 
 	// Start a watcher for all changes after the pull we're doing
 	watchOpt := &client.WatcherOptions{
-		AfterIndex: res.Index,
+		AfterIndex: startIndex,
 		Recursive:  true,
 	}
 	watcher := s.etcdKeys.Watcher(watchStatusKeypath, watchOpt)
 	go func() {
 		for {
-			res, err = watcher.Next(context.Background())
+			res, err := watcher.Next(context.Background())
 			if err != nil {
 				log.Warn("Error from coinserver watcher", "err", err)
 				time.Sleep(time.Second * 2)
