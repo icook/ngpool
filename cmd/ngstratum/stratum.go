@@ -232,11 +232,13 @@ func (n *StratumServer) listenTemplates() {
 	// When new templates are available a new job is created and broadcasted
 	// over jobBroadcast
 	latestTemp := map[TemplateKey][]byte{}
+	var lastJobFlush interface{}
 	for {
 		newTemplate := <-n.newTemplate
 		log.Info("Got new template", "key", newTemplate.key)
 		latestTemp[newTemplate.key] = newTemplate.data
 		job, err := NewJobFromTemplates(latestTemp)
+		lastJobFlush = job.SetFlush(lastJobFlush)
 		if err != nil {
 			log.Error("Error generating job", "err", err)
 			continue

@@ -17,6 +17,7 @@ import (
 
 type Job struct {
 	MainChainJob
+	heights   map[string]int64
 	auxChains []*AuxChainJob
 }
 
@@ -25,7 +26,9 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
 		mainJobSet      bool
 		mainJobTemplate *BlockTemplate
 	)
-	job := Job{}
+	job := Job{
+		heights: map[string]int64{},
+	}
 	for tmplKey, tmplRaw := range templates {
 		var tmpl BlockTemplate
 		err := json.Unmarshal(tmplRaw, &tmpl)
@@ -43,6 +46,7 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
 			if err != nil {
 				return nil, err
 			}
+			job.heights[chainConfig.Code] = auxChainJob.height
 			job.auxChains = append(job.auxChains, auxChainJob)
 		case "getblocktemplate":
 			if mainJobSet {
@@ -53,6 +57,7 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
 			if err != nil {
 				return nil, err
 			}
+			job.heights[chainConfig.Code] = mainChainJob.height
 			job.MainChainJob = *mainChainJob
 			mainJobTemplate = &tmpl
 		default:
@@ -123,6 +128,23 @@ MerkleLoop:
 	job.coinbase1 = coinbase1
 	job.coinbase2 = coinbase2
 	return &job, nil
+}
+
+func (j *Job) SetFlush(lastJobSetFlush interface{}) interface{} {
+	switch prev := lastJobSetFlush.(type) {
+	case map[string]int64:
+		if j.height > prev[j.currencyConfig.Code] {
+			j.cleanJobs = true
+			return j.heights
+		}
+		for _, aux := range j.auxChains {
+			if aux.currencyConfig.FlushAux && aux.height > prev[aux.currencyConfig.Code] {
+				j.cleanJobs = true
+				return j.heights
+			}
+		}
+	}
+	return j.heights
 }
 
 func (j *Job) GetStratumParams() ([]interface{}, error) {

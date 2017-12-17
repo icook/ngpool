@@ -24,6 +24,13 @@ type ChainConfigDecoder struct {
 	// to know when we can payout credits to users. If set too low,
 	// transactions will fail to be confirmed by the network
 	BlockMatureConfirms int64
+	// If this currency is merge mined, should we flush stratum miner jobs when
+	// a new block is announced? This should be selected based on the cost of a
+	// work restart (in stale shares), and the value of merge mined currency.
+	// If the merge mined currency is worth 1/1000th of the main chain
+	// currency, probably leave this false. If they are close in value,
+	// consider setting it to true
+	FlushAux bool
 
 	// Parsed - These options get parsed in SetupCurrencies
 
