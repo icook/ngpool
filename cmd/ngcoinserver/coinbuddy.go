@@ -5,9 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/dustin/go-broadcast"
 	"github.com/gin-gonic/gin"
-	"github.com/icook/btcd/btcjson"
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
@@ -138,8 +138,8 @@ func (c *CoinBuddy) RunEventListener() {
 		ctx.BindJSON(&req)
 		res, err := c.cs.client.RawRequest(req.Method, req.Params)
 		if err != nil {
-			log.Warn("error from rpc proxy", "err", err)
 			if jerr, ok := err.(*btcjson.RPCError); ok {
+				log.Debug("error from rpc proxy", "err", err)
 				ctx.JSON(500, gin.H{
 					"result": nil,
 					"error": map[string]interface{}{
@@ -147,6 +147,7 @@ func (c *CoinBuddy) RunEventListener() {
 						"message": jerr.Message,
 					}, "id": req.ID})
 			} else {
+				log.Warn("unknown error from rpc proxy", "err", err)
 				ctx.JSON(500, gin.H{
 					"result": nil,
 					"error": map[string]interface{}{
