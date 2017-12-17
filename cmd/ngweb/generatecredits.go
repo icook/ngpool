@@ -5,21 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/icook/ngpool/pkg/service"
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"time"
 )
 
 func init() {
-	payoutCmd := &cobra.Command{
-		Use: "common",
+	generatecreditsCmd := &cobra.Command{
+		Use: "generatecredits",
 		Run: func(cmd *cobra.Command, args []string) {
 			ng := NewNgWebAPI()
 			ng.ParseConfig()
-			ng.GenerateCredits()
+			ng.ConnectDB()
+			err := ng.GenerateCredits()
+			if err != nil {
+				ng.log.Crit("Failed", "err", err)
+			}
 		},
 	}
-	RootCmd.AddCommand(payoutCmd)
+	RootCmd.AddCommand(generatecreditsCmd)
 }
 
 type Block struct {
