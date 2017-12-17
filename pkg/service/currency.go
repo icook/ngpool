@@ -9,30 +9,69 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+// This is the structure for the config file represnetation of a "ChainConfig".
+// Many of these properties get parsed into special datastructures for easier
+// use later
 type ChainConfigDecoder struct {
-	Code                string
-	SubsidyAddress      string
-	BlockMatureConfirms int64
-	FeeAddress          string
-	PowAlgorithm        string
+	// Pass through - these are passed through to ChainConfig unmodified
 
-	PubKeyAddrID  string
-	PrivKeyID     string
+	// The currency code. These are canoncially differentiated "LTC_T" for a
+	// litecoin testnet, or "LTC_R" for a litecoin regtest network, since this
+	// Code technically encodes the network type as well. It must be unique.
+	Code string
+	// Number of confirmations required before coinbase UTXOs are allowed to be
+	// spent. This is a network rule that varies per-currency. This is required
+	// to know when we can payout credits to users. If set too low,
+	// transactions will fail to be confirmed by the network
+	BlockMatureConfirms int64
+
+	// Parsed - These options get parsed in SetupCurrencies
+
+	// The address to send newly mined coins
+	SubsidyAddress string
+	// The address to payout accumulated fees to
+	FeeAddress string
+	// The name of an algorithm. Current options are scrypt
+	PowAlgorithm string
+
+	// These parameters are for github.com/btcsuite/btcd/chaincfg.Params, a
+	// datastructure that btcd's libraries pass around to do network specific
+	// operations. We use btcd extensively to handle bitcoin-like data
+	// structures
+
+	// Address Version (pubkey prefix) given in hex (1 byte)
+	PubKeyAddrID string
+	// Private key version for Wallet Import Format (WIF) given in hex (1 byte)
+	PrivKeyID string
+	// Private key version for Wallet Import Format (WIF) given in hex (1 byte)
 	PrivKeyAddrID string
-	NetMagic      uint32
+	// The p2p message magic bytes. This is a sequence of 4 bytes that allow
+	// bitcoin to reject connections from litecoin nodes, etc. It is sent at
+	// the beginning of every message on bitcoin p2p networks, and is unique to
+	// the currency and network
+	NetMagic uint32
 }
 
+// This encodes network rules and pool wide preferences for handling of that
+// currency. There would be a different one of these for testnet, mainnet, or
+// regtest blockchains for a single currency.
 type ChainConfig struct {
 	Code                string
 	BlockMatureConfirms int64
+	FlushAux            bool
+
 	Algo                *Algo
 	Params              *chaincfg.Params
 	BlockSubsidyAddress *btcutil.Address
 	FeeAddress          *btcutil.Address
 }
 
+// This is a global lookup for currency information. All programs load "common"
+// configuration on start and populate this by calling "SetupCurrencies"
 var CurrencyConfig = map[string]*ChainConfig{}
 
+// This parses the viper config structure using ChainConfigDecoder to populate
+// CurrencyConfig with ChainConfig structures
 func (s *Service) SetupCurrencies() {
 	for _, rawConfig := range s.config.GetStringMap("Currencies") {
 		var config ChainConfigDecoder
