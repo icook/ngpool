@@ -10,10 +10,11 @@ import (
 )
 
 type ChainConfigDecoder struct {
-	Code           string
-	SubsidyAddress string
-	FeeAddress     string
-	PowAlgorithm   string
+	Code                string
+	SubsidyAddress      string
+	BlockMatureConfirms int64
+	FeeAddress          string
+	PowAlgorithm        string
 
 	PubKeyAddrID  string
 	PrivKeyID     string
@@ -23,6 +24,7 @@ type ChainConfigDecoder struct {
 
 type ChainConfig struct {
 	Code                string
+	BlockMatureConfirms int64
 	Algo                *Algo
 	Params              *chaincfg.Params
 	BlockSubsidyAddress *btcutil.Address
@@ -65,6 +67,10 @@ func (s *Service) SetupCurrencies() {
 		fa, err := btcutil.DecodeAddress(config.FeeAddress, params)
 		if err != nil {
 			panic(err)
+		}
+
+		if config.BlockMatureConfirms == 0 {
+			panic("You must specify a block confirmation number")
 		}
 
 		cc := &ChainConfig{
