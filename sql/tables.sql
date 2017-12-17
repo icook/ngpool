@@ -10,7 +10,7 @@ CREATE TABLE share
     difficulty double precision NOT NULL,
     mined_at timestamp NOT NULL,
     sharechain varchar NOT NULL,
-    currency varchar NOT NULL
+    currencies varchar[] NOT NULL
 );
 
 CREATE TABLE block

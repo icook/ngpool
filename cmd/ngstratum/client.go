@@ -141,7 +141,7 @@ func (c *StratumClient) writeLoop() {
 			targetFl.SetFloat64(clientJob.difficulty)
 			targetFl.Mul(&diff1, &targetFl)
 			target, _ := targetFl.Int(&big.Int{})
-			blocks, validShare, err := job.CheckSolves(
+			blocks, validShare, currencies, err := job.CheckSolves(
 				submission.Nonce, extranonce, target)
 			if err != nil {
 				c.log.Warn("Unexpected error CheckSolves", "job", clientJob)
@@ -166,6 +166,7 @@ func (c *StratumClient) writeLoop() {
 			c.newShare <- &Share{
 				username:   c.username,
 				time:       time.Now(),
+				currencies: currencies,
 				difficulty: clientJob.difficulty,
 				blocks:     blocks,
 			}

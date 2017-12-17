@@ -12,6 +12,7 @@ func scryptHash(input []byte) ([]byte, error) {
 }
 
 type Algo struct {
+	Name    string
 	PoWHash HashFunc
 	Diff1   *big.Float
 }
@@ -30,6 +31,7 @@ func NewAlgoConfig(name string, diff1Hex string, powFunc HashFunc) *Algo {
 	}
 
 	ac := &Algo{
+		Name:    name,
 		Diff1:   &diff1,
 		PoWHash: powFunc,
 	}

@@ -142,7 +142,7 @@ func (j *Job) GetStratumParams() ([]interface{}, error) {
 	}, nil
 }
 
-func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string]*BlockSolve, bool, error) {
+func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string]*BlockSolve, bool, []string, error) {
 	var ret = map[string]*BlockSolve{}
 	var validShare = false
 
@@ -153,11 +153,11 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	header := j.GetBlockHeader(nonce, coinbase.Bytes())
 	headerHsh, err := j.currencyConfig.Algo.PoWHash(header)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	hashObj, err := chainhash.NewHash(headerHsh)
 	if err != nil {
-		return nil, false, err
+		return nil, false, nil, err
 	}
 	bigHsh := blockchain.HashToBig(hashObj)
 	// Share targets are in opposite endian of block targets (i think..), so
@@ -167,9 +167,11 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 		validShare = true
 	}
 
+	var currencies = []string{j.currencyConfig.Code}
 	if bigHsh.Cmp(j.target) <= 0 {
 		ret[j.currencyConfig.Code] = &BlockSolve{
 			data:       j.GetBlock(header, coinbase.Bytes()),
+			powalgo:    j.currencyConfig.Algo.Name,
 			subsidy:    j.subsidy,
 			height:     j.height,
 			powhash:    bigHsh,
@@ -178,6 +180,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	}
 
 	for _, mj := range j.auxChains {
+		currencies = append(currencies, mj.currencyConfig.Code)
 		if bigHsh.Cmp(mj.target) <= 0 {
 			ret[mj.currencyConfig.Code] = &BlockSolve{
 				data:       mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
@@ -188,7 +191,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 			}
 		}
 	}
-	return ret, validShare, nil
+	return ret, validShare, currencies, nil
 }
 
 type MainChainJob struct {

@@ -11,6 +11,7 @@ import (
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/mitchellh/mapstructure"
 	"github.com/r3labs/sse"
@@ -30,6 +31,7 @@ type BlockSolve struct {
 	difficulty *big.Int
 	height     int64
 	subsidy    int64
+	powalgo    string
 	data       []byte
 }
 
@@ -45,6 +47,7 @@ type Share struct {
 	username   string
 	time       time.Time
 	difficulty float64
+	currencies []string
 	blocks     map[string]*BlockSolve
 }
 
@@ -183,10 +186,11 @@ func (n *StratumServer) ListenShares() {
 			n.blockCast[currencyCode].Submit(block)
 			_, err := n.db.Exec(
 				`INSERT INTO block
-				(height, currency, hash, powhash, subsidy, mined_at, mined_by, difficulty)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+				(height, currency, powalgo, hash, powhash, subsidy, mined_at, mined_by, difficulty)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 				block.height,
 				currencyCode,
+				block.powalgo,
 				hex.EncodeToString(block.getBlockHash().Bytes()),
 				hex.EncodeToString(block.powhash.Bytes()),
 				block.subsidy,
@@ -197,10 +201,14 @@ func (n *StratumServer) ListenShares() {
 				log.Error("Failed to save block", "err", err)
 			}
 		}
+		// TODO: Have this run before inserting block since we want it to be
+		// counted in payout. That said, we want block submission to happen as
+		// quickly as possible. Probably separate blockCast submission from
+		// database recording
 		_, err := n.db.Exec(
-			`INSERT INTO share (username, difficulty, mined_at, chain)
-			VALUES ($1, $2, $3, $4)`,
-			share.username, share.difficulty, share.time, n.shareChain.Name)
+			`INSERT INTO share (username, difficulty, mined_at, sharechain, currencies)
+			VALUES ($1, $2, $3, $4, $5)`,
+			share.username, share.difficulty, share.time, n.shareChain.Name, pq.StringArray(share.currencies))
 		if err != nil {
 			log.Error("Failed to save share", "err", err)
 		}
@@ -285,7 +293,7 @@ func (n *StratumServer) Miner() {
 			var nonce = make([]byte, 4)
 			binary.BigEndian.PutUint32(nonce, i)
 
-			solves, _, err := job.CheckSolves(nonce, extraNonceMagic, nil)
+			solves, _, _, err := job.CheckSolves(nonce, extraNonceMagic, nil)
 			if err != nil {
 				log.Warn("Failed to check solves for job", "err", err)
 			}

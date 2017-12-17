@@ -79,9 +79,9 @@ func (q *NgWebAPI) processBlock(block *Block) error {
 		`SELECT sharechain, 
 		SUM (difficulty) as difficulty
 		FROM share 
-		WHERE mined_at > $1 AND mined_at < $2
-		GROUP BY sharechain;`,
-		block.lastBlockTime, block.MinedAt)
+		WHERE mined_at > $1 AND mined_at < $2 AND currencies @> $3
+		GROUP BY sharechain`,
+		block.lastBlockTime, block.MinedAt, pq.StringArray([]string{block.Currency}))
 	if err != nil {
 		return err
 	}
