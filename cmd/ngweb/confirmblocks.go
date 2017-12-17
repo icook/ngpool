@@ -55,11 +55,13 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 		Currency string
 	}
 	var blocks []HashCurrency
-	err = q.db.Select(&blocks, `SELECT hash, currency, height FROM block WHERE mature = false`)
+	err = q.db.Select(&blocks, `SELECT hash, currency, height FROM block WHERE status = 'immature'`)
 	if err != nil {
 		return err
 	}
+	currencyHeights := map[string]int64{}
 	for _, block := range blocks {
+
 		config, ok := service.CurrencyConfig[block.Currency]
 		if !ok {
 			q.log.Error("Couldn't locate currency config", "block", block, "err", err)
@@ -70,6 +72,7 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 			q.log.Warn("Skipping block, no coinserver live", "block", block, "err", err)
 			continue
 		}
+
 		decHash, err := hex.DecodeString(block.Hash)
 		if err != nil {
 			q.log.Error("Invalid block hash in db", "block", block, "err", err)
@@ -85,17 +88,32 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 			q.log.Error("Failed to get block information from rpc", "block", block, "err", err)
 			continue
 		}
-		if resp.Confirmations >= config.BlockMatureConfirms {
-			_, err := q.db.Exec(
-				`UPDATE block SET mature = true WHERE hash = $1`, block.Hash)
+
+		_, ok = currencyHeights[block.Currency]
+		if !ok {
+			count, err := rpc.GetBlockCount()
 			if err != nil {
-				q.log.Error("Failed to update block mature status", "block", block, "err", err)
+				q.log.Error("Failed to get block count from rpc", "block", block, "rpc", rpc, "err", err)
 				continue
 			}
+			currencyHeights[block.Currency] = count
+		}
+		height := currencyHeights[block.Currency]
+
+		var newStatus string
+		if resp.Confirmations >= config.BlockMatureConfirms {
+			newStatus = "mature"
 			q.log.Info("Marked block confirmed",
 				"block", block,
 				"confirms", resp.Confirmations,
 				"reqconfirms", config.BlockMatureConfirms)
+		} else if resp.Confirmations == -1 && (height-resp.Height) > config.BlockMatureConfirms {
+			newStatus = "orphan"
+			q.log.Info("Block orphan",
+				"block", block,
+				"chainHeight", height,
+				"blockHeight", resp.Height,
+				"reqorphanconfirms", config.BlockMatureConfirms)
 		} else {
 			q.log.Info("Block not mature",
 				"block", block,
@@ -104,6 +122,15 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 				"reqconfirms", config.BlockMatureConfirms)
 		}
 
+		if newStatus != "" {
+			_, err := q.db.Exec(
+				`UPDATE block SET status = $1 WHERE hash = $2`, newStatus, block.Hash)
+			if err != nil {
+				q.log.Error("Failed to update block status",
+					"block", block, "status", newStatus, "err", err)
+				continue
+			}
+		}
 	}
 	return nil
 }

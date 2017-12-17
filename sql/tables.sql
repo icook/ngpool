@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS block CASCADE;
 DROP TABLE IF EXISTS payout_address CASCADE;
 DROP TABLE IF EXISTS credit CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TYPE IF EXISTS block_status CASCADE;
 
 CREATE TABLE share
 (
@@ -13,6 +14,7 @@ CREATE TABLE share
     currencies varchar[] NOT NULL
 );
 
+CREATE TYPE block_status AS ENUM ('immature', 'orphan', 'mature', 'credited');
 CREATE TABLE block
 (
     currency varchar NOT NULL,
@@ -24,8 +26,7 @@ CREATE TABLE block
     mined_at timestamp NOT NULL,
     mined_by varchar NOT NULL,
     difficulty double precision NOT NULL,
-    credited boolean NOT NULL DEFAULT false,
-    mature boolean DEFAULT false NOT NULL,
+    status block_status DEFAULT 'immature' NOT NULL,
     payout_data json DEFAULT '{}'::JSON NOT NULL,
     CONSTRAINT block_pkey PRIMARY KEY (hash)
 );
