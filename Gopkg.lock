@@ -17,7 +17,8 @@
   branch = "master"
   name = "github.com/btcsuite/btcd"
   packages = ["blockchain","btcec","btcjson","chaincfg","chaincfg/chainhash","database","txscript","wire"]
-  revision = "2e60448ffcc6bf78332d1fe590260095f554dd78"
+  revision = "9ce12b73c180b5b9d3f296d20c2af39fd8b09967"
+  source = "https://github.com/icook/btcd.git"
 
 [[projects]]
   branch = "master"
@@ -130,7 +131,7 @@
 [[projects]]
   branch = "master"
   name = "github.com/icook/btcd"
-  packages = ["btcjson","rpcclient"]
+  packages = ["rpcclient"]
   revision = "dcd8efd4e2af1e06c930a4153d8ba2b14e368191"
 
 [[projects]]
@@ -346,6 +347,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8c4315918ae3a73a352c61426981ab5afec7dadb1580e8764a97c9fd07c01eb4"
+  inputs-digest = "d0d3ace2b11d8a9069eecb796ae574b45899f594b6a55377b10e3ebfcd81fa80"
   solver-name = "gps-cdcl"
   solver-version = 1

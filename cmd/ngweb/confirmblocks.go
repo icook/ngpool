@@ -85,7 +85,7 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 			q.log.Error("Failed to get block information from rpc", "block", block, "err", err)
 			continue
 		}
-		if resp.Confirmations >= uint64(config.BlockMatureConfirms) {
+		if resp.Confirmations >= config.BlockMatureConfirms {
 			_, err := q.db.Exec(
 				`UPDATE block SET mature = true WHERE hash = $1`, block.Hash)
 			if err != nil {
@@ -97,9 +97,10 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 				"confirms", resp.Confirmations,
 				"reqconfirms", config.BlockMatureConfirms)
 		} else {
-			q.log.Debug("Block not mature",
+			q.log.Info("Block not mature",
 				"block", block,
 				"confirms", resp.Confirmations,
+				"remain", config.BlockMatureConfirms-resp.Confirmations,
 				"reqconfirms", config.BlockMatureConfirms)
 		}
 

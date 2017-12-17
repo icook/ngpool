@@ -6,6 +6,7 @@ import (
 	"github.com/coreos/etcd/client"
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
+	_ "github.com/spf13/viper/remote"
 	"gopkg.in/yaml.v2"
 	"os"
 	"strings"

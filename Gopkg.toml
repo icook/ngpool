@@ -20,6 +20,10 @@
 #  name = "github.com/x/y"
 #  version = "2.4.0"
 
+[[constraint]]
+  branch = "master"
+  name = "github.com/btcsuite/btcd"
+  source = "https://github.com/icook/btcd.git"
 
 [[constraint]]
   name = "github.com/coreos/etcd"
