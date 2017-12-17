@@ -75,6 +75,8 @@ func (s *Service) SetupCurrencies() {
 
 		cc := &ChainConfig{
 			Code:                config.Code,
+			BlockMatureConfirms: config.BlockMatureConfirms,
+
 			Params:              params,
 			BlockSubsidyAddress: &bsa,
 			FeeAddress:          &fa,

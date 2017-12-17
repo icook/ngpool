@@ -35,12 +35,11 @@ type BlockSolve struct {
 	data       []byte
 }
 
-func (b *BlockSolve) getBlockHash() *big.Int {
+func (b *BlockSolve) getBlockHash() string {
 	var hasher = sha256d.New()
-	hasher.Write(b.data)
-	ret := big.Int{}
-	ret.SetBytes(hasher.Sum(nil))
-	return &ret
+	hasher.Write(b.data[:80])
+	ret := hasher.Sum(nil)
+	return hex.EncodeToString(ret)
 }
 
 type Share struct {
@@ -191,7 +190,7 @@ func (n *StratumServer) ListenShares() {
 				block.height,
 				currencyCode,
 				block.powalgo,
-				hex.EncodeToString(block.getBlockHash().Bytes()),
+				block.getBlockHash(),
 				hex.EncodeToString(block.powhash.Bytes()),
 				block.subsidy,
 				share.time,
