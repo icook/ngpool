@@ -27,7 +27,7 @@ func init() {
 	RootCmd.AddCommand(generatecreditsCmd)
 }
 
-type Block struct {
+type payoutBlock struct {
 	Currency   string
 	Height     int64
 	Hash       string
@@ -61,7 +61,7 @@ type Credit struct {
 	UserID     int `db:"user_id"`
 }
 
-func (q *NgWebAPI) processBlock(block *Block) error {
+func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 	q.log.Info("Starting payout", "block", block)
 	// Get all the shares involced in the block solve by chain. This number is
 	// used to split the block reward between share chains proportionally for
@@ -186,7 +186,7 @@ func (q *NgWebAPI) processBlock(block *Block) error {
 	return nil
 }
 
-func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *Block) ([]*Credit, error) {
+func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Credit, error) {
 	sharesToFind, acc := block.algoConfig.Diff1SharesForDiff(block.Difficulty)
 	// Static last N of 2 for now TODO: Make this configurable
 	var n float64 = 2
@@ -274,7 +274,7 @@ func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
 }
 
 func (q *NgWebAPI) GenerateCredits() error {
-	var blocks []Block
+	var blocks []payoutBlock
 	err := q.db.Select(&blocks,
 		`SELECT currency, height, hash, powalgo, subsidy, mined_at, difficulty
 		FROM block WHERE status = 'mature'`)

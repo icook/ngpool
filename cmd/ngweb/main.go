@@ -23,6 +23,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			ng := NewNgWebAPI()
 			ng.ParseConfig()
+			ng.ConnectDB()
 			ng.SetupGin()
 			ng.engine.Run()
 
