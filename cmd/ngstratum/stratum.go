@@ -27,12 +27,13 @@ import (
 )
 
 type BlockSolve struct {
-	powhash    *big.Int
-	difficulty *big.Int
-	height     int64
-	subsidy    int64
-	powalgo    string
-	data       []byte
+	powhash      *big.Int
+	difficulty   *big.Int
+	coinbaseHash []byte
+	height       int64
+	subsidy      int64
+	powalgo      string
+	data         []byte
 }
 
 func (b *BlockSolve) getBlockHash() string {
@@ -181,12 +182,27 @@ func (n *StratumServer) ListenShares() {
 	for {
 		share := <-n.newShare
 		log.Debug("Got share", "share", share)
+
+		// Fire off submissions for all blocks first, before touching SQL
 		for currencyCode, block := range share.blocks {
 			n.blockCast[currencyCode].Submit(block)
+		}
+
+		// Insert a block and UTXO (the coinbase) for each solve
+		for currencyCode, block := range share.blocks {
 			_, err := n.db.Exec(
+				`INSERT INTO utxo (hash, vout, amount) VALUES ($1, $2, $3)`,
+				hex.EncodeToString(block.coinbaseHash),
+				0, // Coinbase UTXO is always first and only UTXO
+				block.subsidy)
+			if err != nil {
+				log.Error("Failed to save block UTXO", "err", err)
+			}
+
+			_, err = n.db.Exec(
 				`INSERT INTO block
-				(height, currency, powalgo, hash, powhash, subsidy, mined_at, mined_by, difficulty)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				(height, currency, powalgo, hash, powhash, subsidy, mined_at, mined_by, difficulty, coinbase_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 				block.height,
 				currencyCode,
 				block.powalgo,
@@ -195,19 +211,22 @@ func (n *StratumServer) ListenShares() {
 				block.subsidy,
 				share.time,
 				share.username,
-				block.difficulty.String())
+				block.difficulty.String(),
+				hex.EncodeToString(block.coinbaseHash))
 			if err != nil {
 				log.Error("Failed to save block", "err", err)
 			}
 		}
-		// TODO: Have this run before inserting block since we want it to be
-		// counted in payout. That said, we want block submission to happen as
-		// quickly as possible. Probably separate blockCast submission from
-		// database recording
+
+		// Log the users share
 		_, err := n.db.Exec(
 			`INSERT INTO share (username, difficulty, mined_at, sharechain, currencies)
 			VALUES ($1, $2, $3, $4, $5)`,
-			share.username, share.difficulty, share.time, n.shareChain.Name, pq.StringArray(share.currencies))
+			share.username,
+			share.difficulty,
+			share.time,
+			n.shareChain.Name,
+			pq.StringArray(share.currencies))
 		if err != nil {
 			log.Error("Failed to save share", "err", err)
 		}

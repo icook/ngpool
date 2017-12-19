@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS utxo CASCADE;
+DROP TABLE IF EXISTS payout_transaction CASCADE;
 DROP TABLE IF EXISTS share CASCADE;
 DROP TABLE IF EXISTS block CASCADE;
 DROP TABLE IF EXISTS payout_address CASCADE;
@@ -14,6 +16,16 @@ CREATE TABLE share
     currencies varchar[] NOT NULL
 );
 
+CREATE TABLE utxo
+(
+    hash varchar NOT NULL,
+    vout integer NOT NULL,
+    amount bigint NOT NULL,
+    spent boolean NOT NULL DEFAULT false,
+    spendable boolean NOT NULL DEFAULT false,
+    CONSTRAINT utxo_pkey PRIMARY KEY (hash)
+);
+
 CREATE TYPE block_status AS ENUM ('immature', 'orphan', 'mature', 'credited');
 CREATE TABLE block
 (
@@ -21,6 +33,7 @@ CREATE TABLE block
     powalgo varchar NOT NULL,
     height bigint NOT NULL,
     hash varchar NOT NULL,
+    coinbase_hash varchar NOT NULL,
     powhash varchar NOT NULL,
     subsidy numeric NOT NULL,
     mined_at timestamp NOT NULL,
@@ -28,7 +41,11 @@ CREATE TABLE block
     difficulty double precision NOT NULL,
     status block_status DEFAULT 'immature' NOT NULL,
     payout_data json DEFAULT '{}'::JSON NOT NULL,
-    CONSTRAINT block_pkey PRIMARY KEY (hash)
+    CONSTRAINT block_pkey PRIMARY KEY (hash),
+    CONSTRAINT coinbase_hash_fk FOREIGN KEY (coinbase_hash)
+        REFERENCES utxo (hash) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
 );
 
 CREATE TABLE users
@@ -43,6 +60,18 @@ CREATE TABLE users
     CONSTRAINT users_pkey PRIMARY KEY (id),
     CONSTRAINT unique_email UNIQUE (email),
     CONSTRAINT unique_username UNIQUE (username)
+);
+
+CREATE TABLE payout_transaction
+(
+    hash varchar NOT NULL,
+    signed_tx bytea NOT NULL,
+    confirmed boolean NOT NULL,
+    change_utxo varchar NOT NULL,
+    CONSTRAINT change_fk FOREIGN KEY (change_utxo)
+        REFERENCES utxo (hash) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
 );
 
 CREATE TABLE payout_address

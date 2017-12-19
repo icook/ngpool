@@ -160,10 +160,7 @@ func (b *BlockTemplate) createCoinbase(chainConfig *service.ChainConfig, extra [
 	return buf.Bytes(), nil
 }
 
-func (b *BlockTemplate) merkleRoot(coinbase []byte) []byte {
-	var hasher = sha256d.New()
-	hasher.Write(coinbase)
-	coinbaseHash := hasher.Sum(nil)
+func (b *BlockTemplate) merkleRoot(coinbaseHash []byte) []byte {
 	hashes := [][]byte{coinbaseHash}
 	for _, txn := range b.Transactions {
 		txID, err := hex.DecodeString(txn.getTxID())

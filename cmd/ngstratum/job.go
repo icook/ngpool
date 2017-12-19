@@ -172,7 +172,12 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	coinbase.Write(j.coinbase1)
 	coinbase.Write(extraNonce)
 	coinbase.Write(j.coinbase2)
-	header := j.GetBlockHeader(nonce, coinbase.Bytes())
+
+	var hasher = sha256d.New()
+	hasher.Write(coinbase.Bytes())
+	coinbaseHash := hasher.Sum(nil)
+
+	header := j.GetBlockHeader(nonce, coinbaseHash)
 	headerHsh, err := j.currencyConfig.Algo.PoWHash(header)
 	if err != nil {
 		return nil, false, nil, err
@@ -192,12 +197,13 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	var currencies = []string{j.currencyConfig.Code}
 	if bigHsh.Cmp(j.target) <= 0 {
 		ret[j.currencyConfig.Code] = &BlockSolve{
-			data:       j.GetBlock(header, coinbase.Bytes()),
-			powalgo:    j.currencyConfig.Algo.Name,
-			subsidy:    j.subsidy,
-			height:     j.height,
-			powhash:    bigHsh,
-			difficulty: j.target,
+			data:         j.GetBlock(header, coinbase.Bytes()),
+			coinbaseHash: coinbaseHash,
+			powalgo:      j.currencyConfig.Algo.Name,
+			subsidy:      j.subsidy,
+			height:       j.height,
+			powhash:      bigHsh,
+			difficulty:   j.target,
 		}
 	}
 
@@ -205,11 +211,12 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 		currencies = append(currencies, mj.currencyConfig.Code)
 		if bigHsh.Cmp(mj.target) <= 0 {
 			ret[mj.currencyConfig.Code] = &BlockSolve{
-				data:       mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
-				subsidy:    j.subsidy,
-				height:     j.height,
-				powhash:    bigHsh,
-				difficulty: mj.target,
+				data:         mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
+				subsidy:      mj.subsidy,
+				height:       mj.height,
+				coinbaseHash: mj.coinbaseHash,
+				powhash:      bigHsh,
+				difficulty:   mj.target,
 			}
 		}
 	}
@@ -289,16 +296,14 @@ func NewMainChainJob(tmpl *BlockTemplate, config *service.ChainConfig) (*MainCha
 	return job, nil
 }
 
-func (j *MainChainJob) GetBlockHeader(nonce []byte, coinbase []byte) []byte {
+func (j *MainChainJob) GetBlockHeader(nonce []byte, coinbaseHash []byte) []byte {
 	var hasher = sha256d.New()
 	buf := bytes.Buffer{}
 	buf.Write(j.version)
 	buf.Write(j.prevBlockHash)
 
 	// Hash the coinbase, then walk down the merkle branch to get merkle root
-	hasher.Write(coinbase)
-	rootHash := hasher.Sum(nil)
-	hasher.Reset()
+	rootHash := coinbaseHash
 
 	for _, branch := range j.merkleBranch {
 		hasher.Write(rootHash)
@@ -341,6 +346,7 @@ type AuxChainJob struct {
 	blockchainMerkleMask   uint32
 	transactions           [][]byte
 	coinbase               []byte
+	coinbaseHash           []byte
 	target                 *big.Int
 }
 
@@ -366,12 +372,16 @@ func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxC
 	reverseBytes(encodedPrevBlockHash)
 	blkHeader.Write(encodedPrevBlockHash)
 
-	// Hash the coinbase, then walk down the merkle branch to get merkle root
+	// Hash the coinbase, then create a merkleRoot for the header from the
+	// transaction hashes
 	coinbase, err := template.createCoinbase(config, []byte{})
 	if err != nil {
 		return nil, err
 	}
-	merkleRoot := template.merkleRoot(coinbase)
+	var hasher = sha256d.New()
+	hasher.Write(coinbase)
+	coinbaseHash := hasher.Sum(nil)
+	merkleRoot := template.merkleRoot(coinbaseHash)
 	blkHeader.Write(merkleRoot)
 
 	encodedTime := make([]byte, 4)
@@ -386,7 +396,7 @@ func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxC
 	blkHeader.Write(encodedBits)
 	blkHeader.Write([]byte{0, 0, 0, 0})
 
-	var hasher = sha256d.New()
+	hasher.Reset()
 	hasher.Write(blkHeader.Bytes())
 	hashObj, err := chainhash.NewHash(hasher.Sum(nil))
 	if err != nil {
@@ -413,6 +423,7 @@ func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxC
 		currencyConfig: config,
 		target:         target,
 		coinbase:       coinbase,
+		coinbaseHash:   coinbaseHash,
 		transactions:   transactions,
 		chainID:        template.Extras.ChainID,
 		headerHash:     hashObj,
