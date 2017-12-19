@@ -25,6 +25,7 @@ func init() {
 			ng.ParseConfig()
 			ng.ConnectDB()
 			ng.SetupGin()
+			ng.WatchCoinservers()
 			ng.engine.Run()
 
 			// Wait until we recieve sigint

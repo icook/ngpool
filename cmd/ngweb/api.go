@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/icook/btcd/rpcclient"
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/itsjamie/gin-cors"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,11 +27,16 @@ type NgWebAPI struct {
 	db      *sqlx.DB
 	engine  *gin.Engine
 	service *service.Service
+
+	currencyRPC    map[string]*rpcclient.Client
+	currencyRPCMtx *sync.Mutex
 }
 
 func NewNgWebAPI() *NgWebAPI {
 	var ngw = NgWebAPI{
-		log: log.New(),
+		log:            log.New(),
+		currencyRPCMtx: &sync.Mutex{},
+		currencyRPC:    map[string]*rpcclient.Client{},
 	}
 	config := viper.New()
 	config.SetConfigType("yaml")
@@ -89,6 +96,7 @@ func (q *NgWebAPI) SetupGin() {
 	r.POST("/v1/login", q.postLogin)
 	r.GET("/v1/blocks", q.getBlocks)
 	r.GET("/v1/block/:hash", q.getBlocks)
+	r.GET("createpayout/:currency", q.getCreatePayout)
 
 	api := r.Group("/v1/user/")
 	api.Use(q.authMiddleware)
@@ -101,6 +109,48 @@ func (q *NgWebAPI) SetupGin() {
 	}
 
 	q.engine = r
+}
+
+func (q *NgWebAPI) WatchCoinservers() {
+	updates, err := q.service.ServiceWatcher("coinserver")
+	if err != nil {
+		log.Crit("Failed to start coinserver watcher", "err", err)
+		os.Exit(1)
+	}
+	go func() {
+		q.log.Info("Listening for new coinserver services")
+		for {
+			update := <-updates
+			labels := update.Status.Labels
+			currency := labels["currency"].(string)
+			switch update.Action {
+			case "removed":
+				q.currencyRPCMtx.Lock()
+				delete(q.currencyRPC, currency)
+				q.currencyRPCMtx.Unlock()
+			case "updated":
+			case "added":
+				endpoint := labels["endpoint"].(string)
+				connCfg := &rpcclient.ConnConfig{
+					Host:         endpoint[7:] + "rpc",
+					User:         "",
+					Pass:         "",
+					HTTPPostMode: true, // Bitcoin core only supports HTTP POST mode
+					DisableTLS:   true, // Bitcoin core does not provide TLS by default
+				}
+				client, err := rpcclient.New(connCfg, nil)
+				if err != nil {
+					q.log.Error("Failed to init RPC client obj", "err", err)
+					continue
+				}
+				q.currencyRPCMtx.Lock()
+				q.currencyRPC[currency] = client
+				q.currencyRPCMtx.Unlock()
+			default:
+				q.log.Warn("Unrecognized action from service watcher", "action", update.Action)
+			}
+		}
+	}()
 }
 
 func projectBase() string {
@@ -125,4 +175,11 @@ func (q *NgWebAPI) LoadFixtures(fixtures ...string) {
 			}
 		}
 	}
+}
+
+func (q *NgWebAPI) getRPC(currency string) (*rpcclient.Client, bool) {
+	q.currencyRPCMtx.Lock()
+	defer q.currencyRPCMtx.Unlock()
+	r, o := q.currencyRPC[currency]
+	return r, o
 }

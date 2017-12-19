@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/ngpool/pkg/service"
@@ -72,4 +75,167 @@ func (q *NgWebAPI) postSetPayout(c *gin.Context) {
 		return
 	}
 	c.Status(200)
+}
+
+func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
+	var currency = c.Param("currency")
+
+	config, ok := service.CurrencyConfig[currency]
+	if !ok {
+		q.apiError(c, 400, APIError{
+			Code:  "unrecognized_currency",
+			Title: "Specified currency code is not configured"})
+		return
+	}
+
+	rpc, ok := q.getRPC(currency)
+	if !ok {
+		q.log.Warn("Failed to grab RPC server", "currency", currency)
+		q.apiError(c, 500, APIError{
+			Code:  "rpc_failure",
+			Title: "RPC is currency unavailable"})
+		return
+	}
+
+	type Credit struct {
+		ID      int
+		UserID  int `db:"user_id"`
+		Amount  int64
+		Address string
+	}
+	var credits []Credit
+	err := q.db.Select(&credits,
+		`SELECT credit.id, credit.user_id, credit.amount, payout_address.address
+		FROM credit LEFT JOIN payout_address ON
+		credit.user_id = payout_address.user_id AND payout_address.currency = $1
+		WHERE credit.currency = $2 AND payout_address.address IS NOT NULL`, currency, currency)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	if len(credits) == 0 {
+		q.apiSuccess(c, 200, res{})
+		return
+	}
+	type PayoutMap struct {
+		CreditIDs []int
+		UserID    int
+		Address   btcutil.Address
+		Amount    int64
+	}
+	var maps = map[int]*PayoutMap{}
+	var totalPayout int64 = 0
+	defaultNet := &chaincfg.MainNetParams
+	for _, credit := range credits {
+		// Add to a datastructure to pass to signer that provides metadata for
+		// an output
+		pm, ok := maps[credit.UserID]
+		if !ok {
+			// Add to our list of Outputs
+			addr, err := btcutil.DecodeAddress(credit.Address, defaultNet)
+			// TODO: consider handling this more elegantly by ignoring invalid addresses
+			if err != nil {
+				q.apiException(c, 500, errors.WithStack(err), APIError{
+					Code:  "invalid_address",
+					Title: "One or more payout addresses are invalid"})
+				return
+			}
+			pm = &PayoutMap{
+				UserID:  credit.UserID,
+				Address: addr,
+			}
+			maps[credit.UserID] = pm
+		}
+		pm.Amount += credit.Amount
+		pm.CreditIDs = append(pm.CreditIDs, credit.ID)
+
+		totalPayout += credit.Amount
+	}
+
+	// Pick our UTXOs for the transaction. For now just pick whatever...
+	type UTXO struct {
+		Hash   string
+		Vout   int
+		Amount int64
+	}
+	var utxos []UTXO
+	err = q.db.Select(&utxos,
+		`SELECT hash, vout, amount FROM utxo
+		WHERE currency = $1 AND spendable = true AND spent = false`, currency)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	var selectedUTXO []UTXO
+	var totalPaid int64 = 0
+	inputs := []btcjson.TransactionInput{}
+	for _, utxo := range utxos {
+		selectedUTXO = append(selectedUTXO, utxo)
+		inputs = append(inputs, btcjson.TransactionInput{
+			Txid: utxo.Hash, Vout: uint32(utxo.Vout)})
+		totalPaid += utxo.Amount
+		if totalPaid >= totalPayout {
+			break
+		}
+	}
+	if totalPaid < totalPayout {
+		q.log.Warn("Insufficient funds for payout",
+			"currency", currency,
+			"utxosum", totalPaid,
+			"payoutsum", totalPayout)
+		q.apiError(c, 500, APIError{
+			Code:  "insufficient_funds",
+			Title: "Not enough utxos to pay"})
+		return
+	}
+
+	// Encode maps to outputs
+	var amounts = map[btcutil.Address]btcutil.Amount{}
+	for _, pm := range maps {
+		amounts[pm.Address] = btcutil.Amount(pm.Amount)
+	}
+	// Add change address to outputs
+	change := totalPaid - totalPayout
+	if change > 0 {
+		amounts[*config.BlockSubsidyAddress] = btcutil.Amount(change)
+	}
+
+	// Create our transaction
+	locktime := int64(0)
+	fmt.Printf("inputs: %+v\n", inputs)
+	fmt.Printf("amounts: %+v\n\n", amounts)
+	tx, err := rpc.CreateRawTransaction(inputs, amounts, nil)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), APIError{
+			Code:  "rpc_failure",
+			Title: "RPC failed to run CreateRawTransaction"})
+		return
+	}
+
+	// Compute the fee, then extract it from each of the amounts...
+	fee := tx.SerializeSize() * config.PayoutTransactionFee
+	feePerPayee := fee / (len(tx.TxOut) - 1)
+	q.log.Info("Calculating fee for payout",
+		"fee per byte", config.PayoutTransactionFee,
+		"tx size", tx.SerializeSize(),
+		"total fee", fee,
+		"fee per payee", feePerPayee)
+
+	// Remove the fee from each payee proportional to their payout
+	amounts = map[btcutil.Address]btcutil.Amount{}
+	for _, pm := range maps {
+		fract := float64(pm.Amount) / float64(totalPaid)
+		feePortion := int64(fract * float64(fee))
+		amounts[pm.Address] = btcutil.Amount(int64(pm.Amount) - feePortion)
+	}
+
+	tx, err = rpc.CreateRawTransaction(inputs, amounts, &locktime)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), APIError{
+			Code:  "rpc_failure",
+			Title: "RPC failed to run CreateRawTransaction"})
+		return
+	}
+
+	q.apiSuccess(c, 200, res{"payout_maps": maps})
 }

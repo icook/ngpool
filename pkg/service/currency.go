@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	log "github.com/inconshreveable/log15"
 	"github.com/mitchellh/mapstructure"
+	"os"
 )
 
 // This is the structure for the config file represnetation of a "ChainConfig".
@@ -31,6 +32,8 @@ type ChainConfigDecoder struct {
 	// currency, probably leave this false. If they are close in value,
 	// consider setting it to true
 	FlushAux bool
+	// This is the transaction fee to use for payouts. Given in satoshis / byte
+	PayoutTransactionFee int
 
 	// Parsed - These options get parsed in SetupCurrencies
 
@@ -63,9 +66,10 @@ type ChainConfigDecoder struct {
 // currency. There would be a different one of these for testnet, mainnet, or
 // regtest blockchains for a single currency.
 type ChainConfig struct {
-	Code                string
-	BlockMatureConfirms int64
-	FlushAux            bool
+	Code                 string
+	BlockMatureConfirms  int64
+	FlushAux             bool
+	PayoutTransactionFee int
 
 	Algo                *Algo
 	Params              *chaincfg.Params
@@ -107,7 +111,11 @@ func (s *Service) SetupCurrencies() {
 
 		bsa, err := btcutil.DecodeAddress(config.SubsidyAddress, params)
 		if err != nil {
-			panic(err)
+			log.Crit("Error decoding SubsidyAddress",
+				"address", config.SubsidyAddress,
+				"err", err,
+				"currency", config.Code)
+			os.Exit(1)
 		}
 
 		fa, err := btcutil.DecodeAddress(config.FeeAddress, params)
@@ -120,8 +128,9 @@ func (s *Service) SetupCurrencies() {
 		}
 
 		cc := &ChainConfig{
-			Code:                config.Code,
-			BlockMatureConfirms: config.BlockMatureConfirms,
+			Code:                 config.Code,
+			BlockMatureConfirms:  config.BlockMatureConfirms,
+			PayoutTransactionFee: config.PayoutTransactionFee,
 
 			Params:              params,
 			BlockSubsidyAddress: &bsa,

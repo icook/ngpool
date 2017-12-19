@@ -18,6 +18,7 @@ CREATE TABLE share
 
 CREATE TABLE utxo
 (
+    currency varchar NOT NULL,
     hash varchar NOT NULL,
     vout integer NOT NULL,
     amount bigint NOT NULL,
@@ -105,3 +106,5 @@ CREATE TABLE credit
         ON DELETE NO ACTION,
     CONSTRAINT credit_pkey PRIMARY KEY (id)
 );
+
+INSERT INTO users (id, username, password, email, verified_email, tfa_code, tfa_enabled) VALUES (1, 'fee', '$2a$06$pJF0DSl6M7pTjPv8hBTP1uL/lAe7UqHZl5gKc3QA02yRFV1oCTFum', 'fee@test.com', false, NULL, false);

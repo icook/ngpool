@@ -191,17 +191,20 @@ func (n *StratumServer) ListenShares() {
 		// Insert a block and UTXO (the coinbase) for each solve
 		for currencyCode, block := range share.blocks {
 			_, err := n.db.Exec(
-				`INSERT INTO utxo (hash, vout, amount) VALUES ($1, $2, $3)`,
+				`INSERT INTO utxo (hash, vout, amount, currency)
+				VALUES ($1, $2, $3, $4)`,
 				hex.EncodeToString(block.coinbaseHash),
 				0, // Coinbase UTXO is always first and only UTXO
-				block.subsidy)
+				block.subsidy,
+				currencyCode)
 			if err != nil {
 				log.Error("Failed to save block UTXO", "err", err)
 			}
 
 			_, err = n.db.Exec(
 				`INSERT INTO block
-				(height, currency, powalgo, hash, powhash, subsidy, mined_at, mined_by, difficulty, coinbase_hash)
+				(height, currency, powalgo, hash, powhash, subsidy, mined_at,
+					mined_by, difficulty, coinbase_hash)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 				block.height,
 				currencyCode,
