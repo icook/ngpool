@@ -366,7 +366,7 @@ func (cw *CoinserverWatcher) Start() {
 func (cw *CoinserverWatcher) RunBlockCastListener() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
-	logger := log.New("coin", cw.tmplKey.Currency, "id", cw.id[:8])
+	logger := log.New("coin", cw.tmplKey.Currency, "id", cw.id)
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         cw.endpoint[7:] + "rpc",
@@ -421,7 +421,7 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 func (cw *CoinserverWatcher) RunTemplateBroadcaster() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
-	logger := log.New("id", cw.id[:8], "tmplKey", cw.tmplKey)
+	logger := log.New("id", cw.id, "tmplKey", cw.tmplKey)
 	client := &sse.Client{
 		URL:        cw.endpoint + "blocks",
 		Connection: &http.Client{},
@@ -512,7 +512,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(
 		switch update.Action {
 		case "removed":
 			if csw, ok := n.coinserverWatchers[update.ServiceID]; ok {
-				log.Info("Coinserver shutdown", "id", update.ServiceID[:8])
+				log.Info("Coinserver shutdown", "id", update.ServiceID)
 				csw.Stop()
 			}
 		case "updated":
@@ -553,7 +553,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(
 			}
 			n.coinserverWatchers[update.ServiceID] = cw
 			cw.Start()
-			log.Debug("New coinserver detected", "id", update.ServiceID[:8], "tmplKey", tmplKey)
+			log.Debug("New coinserver detected", "id", update.ServiceID, "tmplKey", tmplKey)
 		default:
 			log.Warn("Unrecognized action from service watcher", "action", update.Action)
 		}
