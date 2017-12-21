@@ -128,7 +128,11 @@ func (s *Service) SetupCurrencies() {
 		}
 
 		if config.BlockMatureConfirms == 0 {
-			panic("You must specify a block confirmation number")
+			panic("You must specify a BlockMatureConfirms")
+		}
+
+		if config.PayoutTransactionFee == 0 {
+			panic("You must specify a PayoutTransactionFee")
 		}
 
 		cc := &ChainConfig{
