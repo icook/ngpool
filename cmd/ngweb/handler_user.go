@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
+	"encoding/hex"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
@@ -118,10 +119,12 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		return
 	}
 	type PayoutMap struct {
-		CreditIDs []int
-		UserID    int
-		Address   btcutil.Address
-		Amount    int64
+		CreditIDs  []int
+		UserID     int
+		AddressObj btcutil.Address `json:"-"`
+		Address    string
+		Amount     int64
+		MinerFee   int64
 	}
 	var maps = map[int]*PayoutMap{}
 	var totalPayout int64 = 0
@@ -141,8 +144,9 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 				return
 			}
 			pm = &PayoutMap{
-				UserID:  credit.UserID,
-				Address: addr,
+				UserID:     credit.UserID,
+				Address:    credit.Address,
+				AddressObj: addr,
 			}
 			maps[credit.UserID] = pm
 		}
@@ -151,6 +155,10 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 
 		totalPayout += credit.Amount
 	}
+	q.log.Info("Credits accumulated",
+		"credit_count", len(credits),
+		"payout_map_count", len(maps),
+		"total", totalPayout)
 
 	// Pick our UTXOs for the transaction. For now just pick whatever...
 	type UTXO struct {
@@ -178,6 +186,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 			break
 		}
 	}
+	q.log.Info("Picked UTXOs", "utxo_count", len(inputs), "total", totalPaid)
 	if totalPaid < totalPayout {
 		q.log.Warn("Insufficient funds for payout",
 			"currency", currency,
@@ -192,18 +201,17 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	// Encode maps to outputs
 	var amounts = map[btcutil.Address]btcutil.Amount{}
 	for _, pm := range maps {
-		amounts[pm.Address] = btcutil.Amount(pm.Amount)
+		amounts[pm.AddressObj] = btcutil.Amount(pm.Amount)
 	}
 	// Add change address to outputs
 	change := totalPaid - totalPayout
+	q.log.Info("Change calculated", "change", change)
 	if change > 0 {
-		amounts[*config.BlockSubsidyAddress] = btcutil.Amount(change)
+		amounts[*config.BlockSubsidyAddress] += btcutil.Amount(change)
 	}
 
 	// Create our transaction
 	locktime := int64(0)
-	fmt.Printf("inputs: %+v\n", inputs)
-	fmt.Printf("amounts: %+v\n\n", amounts)
 	tx, err := rpc.CreateRawTransaction(inputs, amounts, nil)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), APIError{
@@ -214,7 +222,8 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 
 	// Compute the fee, then extract it from each of the amounts...
 	fee := tx.SerializeSize() * config.PayoutTransactionFee
-	feePerPayee := fee / (len(tx.TxOut) - 1)
+	q.log.Info("Generated tx for fee calc", "tx", tx)
+	feePerPayee := fee / len(maps)
 	q.log.Info("Calculating fee for payout",
 		"fee per byte", config.PayoutTransactionFee,
 		"tx size", tx.SerializeSize(),
@@ -226,8 +235,19 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	for _, pm := range maps {
 		fract := float64(pm.Amount) / float64(totalPaid)
 		feePortion := int64(fract * float64(fee))
-		amounts[pm.Address] = btcutil.Amount(int64(pm.Amount) - feePortion)
+		amounts[pm.AddressObj] = btcutil.Amount(int64(pm.Amount) - feePortion)
+		pm.MinerFee = feePortion
 	}
+	// readd the change
+	if change > 0 {
+		amounts[*config.BlockSubsidyAddress] += btcutil.Amount(change)
+	}
+
+	var realFee int64 = totalPaid
+	for _, out := range amounts {
+		realFee -= int64(out)
+	}
+	q.log.Info("Real fee", "fee", realFee, "perc", float64(realFee)/float64(totalPaid)*100)
 
 	tx, err = rpc.CreateRawTransaction(inputs, amounts, &locktime)
 	if err != nil {
@@ -237,5 +257,14 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		return
 	}
 
-	q.apiSuccess(c, 200, res{"payout_maps": maps})
+	txWriter := bytes.Buffer{}
+	err = tx.Serialize(&txWriter)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), APIError{
+			Code:  "tx_serialize_err",
+			Title: "Transaction serialization failed"})
+		return
+	}
+
+	q.apiSuccess(c, 200, res{"payout_maps": maps, "tx": hex.EncodeToString(txWriter.Bytes())})
 }
