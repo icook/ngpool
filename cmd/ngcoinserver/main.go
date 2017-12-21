@@ -17,11 +17,14 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
-	cb := NewCoinBuddy()
 	runCmd := &cobra.Command{
-		Use:   "run",
+		Use:   "run [name]",
 		Short: "Run the coinbuddy and coinserver",
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) > 0 {
+				os.Setenv("SERVICEID", args[0])
+			}
+			cb := NewCoinBuddy()
 			defer cb.Stop()
 			cb.Run()
 

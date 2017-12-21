@@ -9,19 +9,22 @@ import (
 )
 
 var RootCmd = &cobra.Command{
-	Use:   "coinbuddy",
-	Short: "A coinserver sidekick",
+	Use:   "ngstratum",
+	Short: "A stratum mining server",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
 }
 
 func init() {
-	ng := NewStratumServer()
 	runCmd := &cobra.Command{
-		Use:   "run",
+		Use:   "run [name]",
 		Short: "Run the coinbuddy and coinserver",
 		Run: func(cmd *cobra.Command, args []string) {
+			if len(args) > 0 {
+				os.Setenv("SERVICEID", args[0])
+			}
+			ng := NewStratumServer()
 			defer ng.Stop()
 			ng.Start()
 
