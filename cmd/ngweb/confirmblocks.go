@@ -53,9 +53,12 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 		Height   int64 // Only for logging/debugging
 		Hash     string
 		Currency string
+		// For setting the utxo spendable
+		CoinbaseHash string `db:"coinbase_hash"`
 	}
 	var blocks []HashCurrency
-	err = q.db.Select(&blocks, `SELECT hash, currency, height FROM block WHERE status = 'immature'`)
+	err = q.db.Select(&blocks,
+		`SELECT hash, currency, height, coinbase_hash FROM block WHERE status = 'immature'`)
 	if err != nil {
 		return err
 	}
@@ -123,10 +126,29 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 		}
 
 		if newStatus != "" {
-			_, err := q.db.Exec(
+			tx, err := q.db.Begin()
+			_, err = tx.Exec(
 				`UPDATE block SET status = $1 WHERE hash = $2`, newStatus, block.Hash)
 			if err != nil {
+				tx.Rollback()
 				q.log.Error("Failed to update block status",
+					"block", block, "status", newStatus, "err", err)
+				continue
+			}
+
+			if newStatus == "mature" {
+				_, err := tx.Exec(
+					`UPDATE utxo SET spendable = true WHERE hash = $1`, block.CoinbaseHash)
+				if err != nil {
+					tx.Rollback()
+					q.log.Error("Failed to update utxo spendable",
+						"block", block, "err", err)
+					continue
+				}
+			}
+			err = tx.Commit()
+			if err != nil {
+				q.log.Error("Failed to commit block/utxo status",
 					"block", block, "status", newStatus, "err", err)
 				continue
 			}
