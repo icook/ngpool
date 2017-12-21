@@ -109,6 +109,10 @@ func (s *Service) SetupCurrencies() {
 		}
 		params.PubKeyHashAddrID = decoded[0]
 
+		if err := chaincfg.Register(params); err != nil {
+			panic("failed to register network: " + err.Error())
+		}
+
 		bsa, err := btcutil.DecodeAddress(config.SubsidyAddress, params)
 		if err != nil {
 			log.Crit("Error decoding SubsidyAddress",
@@ -138,9 +142,6 @@ func (s *Service) SetupCurrencies() {
 			Algo:                AlgoConfig[config.PowAlgorithm],
 		}
 
-		if err := chaincfg.Register(params); err != nil {
-			panic("failed to register network: " + err.Error())
-		}
 		CurrencyConfig[config.Code] = cc
 	}
 }
