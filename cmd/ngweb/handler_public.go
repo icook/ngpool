@@ -24,7 +24,7 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	err := q.db.Select(&blocks,
 		`SELECT
 		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status
-		FROM block LIMIT 100`)
+		FROM block ORDER BY mined_at DESC LIMIT 100`)
 	if err != nil && err != sql.ErrNoRows {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
