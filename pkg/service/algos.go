@@ -18,7 +18,7 @@ type Algo struct {
 	NetDiff1   float64
 }
 
-func (a *Algo) Diff1SharesForDiff(blockTarget float64) (float64, big.Accuracy) {
+func (a *Algo) Diff1SharesForTarget(blockTarget float64) (float64, big.Accuracy) {
 	blockTargetBig := big.NewFloat(blockTarget)
 	diff1 := new(big.Float).Set(a.ShareDiff1)
 	return diff1.Quo(diff1, blockTargetBig).Float64()

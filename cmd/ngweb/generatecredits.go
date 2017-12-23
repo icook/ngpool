@@ -28,13 +28,13 @@ func init() {
 }
 
 type payoutBlock struct {
-	Currency   string
-	Height     int64
-	Hash       string
-	PowAlgo    string
-	Subsidy    int64
-	MinedAt    time.Time `db:"mined_at"`
-	Difficulty float64
+	Currency string
+	Height   int64
+	Hash     string
+	PowAlgo  string
+	Subsidy  int64
+	MinedAt  time.Time `db:"mined_at"`
+	Target   float64
 
 	algoConfig    *service.Algo
 	lastBlockTime time.Time
@@ -187,14 +187,14 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 }
 
 func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Credit, error) {
-	sharesToFind, acc := block.algoConfig.Diff1SharesForDiff(block.Difficulty)
+	sharesToFind, acc := block.algoConfig.Diff1SharesForTarget(block.Target)
 	// Static last N of 2 for now TODO: Make this configurable
 	var n float64 = 2
 	sharesToFind *= n
 	// Static fee user id, needs to be configurable as well
 	feeUserID := 1
 	q.log.Info("Calculated required shares",
-		"accuracy", acc, "requiredShares", sharesToFind, "diff", block.Difficulty, "diff1", block.algoConfig.ShareDiff1)
+		"accuracy", acc, "requiredShares", sharesToFind, "target", block.Target, "diff1", block.algoConfig.ShareDiff1)
 
 	userShares, total, err := q.collectShares(sharesToFind, feeUserID, sc.Name, block.MinedAt)
 	if err != nil {
@@ -276,7 +276,7 @@ func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
 func (q *NgWebAPI) GenerateCredits() error {
 	var blocks []payoutBlock
 	err := q.db.Select(&blocks,
-		`SELECT currency, height, hash, powalgo, subsidy, mined_at, difficulty
+		`SELECT currency, height, hash, powalgo, subsidy, mined_at, target
 		FROM block WHERE status = 'mature'`)
 	if err != nil {
 		return err
