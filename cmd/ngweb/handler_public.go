@@ -25,7 +25,7 @@ type Block struct {
 }
 
 func (q *NgWebAPI) getBlocks(c *gin.Context) {
-	var blocks []*Block
+	var blocks = []*Block{}
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
 	base := psql.Select("currency, height, hash, powalgo, subsidy, mined_at, difficulty, status").
