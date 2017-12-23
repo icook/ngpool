@@ -83,8 +83,8 @@ var CurrencyConfig = map[string]*ChainConfig{}
 
 // This parses the viper config structure using ChainConfigDecoder to populate
 // CurrencyConfig with ChainConfig structures
-func (s *Service) SetupCurrencies() {
-	for _, rawConfig := range s.config.GetStringMap("Currencies") {
+func SetupCurrencies(rawConfig map[string]interface{}) {
+	for _, rawConfig := range rawConfig {
 		var config ChainConfigDecoder
 		err := mapstructure.Decode(rawConfig, &config)
 		if err != nil {

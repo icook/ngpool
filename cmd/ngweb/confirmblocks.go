@@ -33,12 +33,10 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 	currencyCoinservers := map[string]*rpcclient.Client{}
 	for _, service := range services {
 		// TODO: Fail gracefully
-		endpoint := service.Labels["endpoint"].(string)
-		currency := service.Labels["currency"].(string)
+		endpoint := service.Labels["endpoint"]
+		currency := service.Labels["currency"]
 		connCfg := &rpcclient.ConnConfig{
 			Host:         endpoint[7:] + "rpc",
-			User:         "",
-			Pass:         "",
 			HTTPPostMode: true, // Bitcoin core only supports HTTP POST mode
 			DisableTLS:   true, // Bitcoin core does not provide TLS by default
 		}

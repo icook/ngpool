@@ -13,11 +13,9 @@ import (
 )
 
 type Service struct {
-	config     *viper.Viper
-	serviceID  string
+	name       string
 	namespace  string
 	pushStatus chan map[string]interface{}
-	etcd       client.Client
 	etcdKeys   client.KeysAPI
 }
 
@@ -31,30 +29,13 @@ type ServiceStatusUpdate struct {
 type ServiceStatus struct {
 	ServiceID  string
 	Status     map[string]interface{}
-	Labels     map[string]interface{}
+	Labels     map[string]string
 	UpdateTime time.Time
 }
 
-func NewService(namespace string, config *viper.Viper) *Service {
-	s := &Service{
-		namespace: namespace,
-		config:    config,
-	}
-	s.serviceID = s.config.GetString("ServiceID")
-	s.config.SetDefault("EtcdEndpoint", []string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
-
-	log.Info("Loaded service, pulling config from etcd", "service", s.serviceID)
-	s.config.SetConfigType("yaml")
-
-	keyPath := "/config/" + s.namespace + "/" + s.serviceID
-	s.config.AddRemoteProvider("etcd", s.config.GetStringSlice("EtcdEndpoint")[0], keyPath)
-	err := s.config.ReadRemoteConfig()
-	if err != nil {
-		log.Warn("Unable to load from etcd", "err", err, "keypath", keyPath)
-	}
-
+func NewService(namespace string, etcdEndpoints []string) *Service {
 	cfg := client.Config{
-		Endpoints: s.config.GetStringSlice("EtcdEndpoint"),
+		Endpoints: etcdEndpoints,
 		Transport: client.DefaultTransport,
 		// set timeout per request to fail fast when the target endpoint is unavailable
 		HeaderTimeoutPerRequest: time.Second,
@@ -64,19 +45,44 @@ func NewService(namespace string, config *viper.Viper) *Service {
 		log.Crit("Failed to make etcd client", "err", err)
 		os.Exit(1)
 	}
-	s.etcd = etcd
-	s.etcdKeys = client.NewKeysAPI(s.etcd)
 
+	s := &Service{
+		namespace: namespace,
+		etcdKeys:  client.NewKeysAPI(etcd),
+	}
+	return s
+}
+
+func (s *Service) LoadServiceConfig(config *viper.Viper, name string) {
+	s.name = name
+
+	keyPath := "/config/" + s.namespace + "/" + s.name
+	res, err := s.etcdKeys.Get(context.Background(), keyPath, nil)
+	if err != nil {
+		log.Crit("Unable to contact etcd", "err", err)
+		os.Exit(1)
+	}
+	config.SetConfigType("yaml")
+	config.MergeConfig(strings.NewReader(res.Node.Value))
+}
+
+func (s *Service) LoadCommonConfig() *viper.Viper {
 	res, err := s.etcdKeys.Get(context.Background(), "/config/common", nil)
 	if err != nil {
 		log.Crit("Unable to contact etcd", "err", err)
 		os.Exit(1)
 	}
-	s.config.MergeConfig(strings.NewReader(res.Node.Value))
+	config := viper.New()
+	config.SetConfigType("yaml")
+	config.MergeConfig(strings.NewReader(res.Node.Value))
 
-	s.SetupCurrencies()
-	s.SetupShareChains()
-	return s
+	SetupCurrencies(config.GetStringMap("Currencies"))
+	SetupShareChains(config.GetStringMap("ShareChains"))
+	sub := config.Sub(s.namespace)
+	if sub == nil {
+		sub = viper.New()
+	}
+	return sub
 }
 
 func (s *Service) parseNode(node *client.Node) (string, *ServiceStatus) {
@@ -203,12 +209,16 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 	return updates, nil
 }
 
-func (s *Service) KeepAlive(labels map[string]interface{}) error {
+func (s *Service) KeepAlive(labels map[string]string) error {
 	var (
 		lastValue  string
 		lastStatus map[string]interface{} = make(map[string]interface{})
-		serviceID  string                 = s.config.GetString("ServiceID")
 	)
+	if s.name == "" {
+		log.Crit(`Cannot start service KeepAlive without name set.
+			Call LoadServiceConfig, or set manually`)
+		os.Exit(1)
+	}
 	if len(labels) == 0 {
 		log.Crit("Cannot start service KeepAlive without labels")
 		os.Exit(1)
@@ -242,7 +252,7 @@ func (s *Service) KeepAlive(labels map[string]interface{}) error {
 
 		// Set TTL update, or new information
 		_, err = s.etcdKeys.Set(
-			context.Background(), "/status/"+s.namespace+"/"+serviceID, value, opt)
+			context.Background(), "/status/"+s.namespace+"/"+s.name, value, opt)
 		if err != nil {
 			log.Warn("Failed to update etcd status entry", "err", err)
 			continue

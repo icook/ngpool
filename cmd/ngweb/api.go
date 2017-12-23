@@ -38,19 +38,21 @@ func NewNgWebAPI() *NgWebAPI {
 		currencyRPCMtx: &sync.Mutex{},
 		currencyRPC:    map[string]*rpcclient.Client{},
 	}
-	config := viper.New()
-	config.SetConfigType("yaml")
-	config.SetDefault("LogLevel", "info")
-	config.SetDefault("DbConnectionString",
-		"user=ngpool dbname=ngpool sslmode=disable password=knight")
-	ngw.config = config
 
 	return &ngw
 }
 
 func (q *NgWebAPI) ParseConfig() {
 	// Load our configuration info
-	q.service = service.NewService("api", q.config)
+	q.service = service.NewService("api",
+		[]string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
+	config := q.service.LoadCommonConfig()
+
+	config.SetDefault("LogLevel", "info")
+	config.SetDefault("DbConnectionString",
+		"user=ngpool dbname=ngpool sslmode=disable password=knight")
+	q.config = config
+
 	// TODO: Check for secure JWTSecret
 
 	levelConfig := q.config.GetString("LogLevel")
@@ -118,7 +120,7 @@ func (q *NgWebAPI) WatchCoinservers() {
 		for {
 			update := <-updates
 			labels := update.Status.Labels
-			currency := labels["currency"].(string)
+			currency := labels["currency"]
 			switch update.Action {
 			case "removed":
 				q.currencyRPCMtx.Lock()
@@ -126,11 +128,9 @@ func (q *NgWebAPI) WatchCoinservers() {
 				q.currencyRPCMtx.Unlock()
 			case "updated":
 			case "added":
-				endpoint := labels["endpoint"].(string)
+				endpoint := labels["endpoint"]
 				connCfg := &rpcclient.ConnConfig{
 					Host:         endpoint[7:] + "rpc",
-					User:         "",
-					Pass:         "",
 					HTTPPostMode: true, // Bitcoin core only supports HTTP POST mode
 					DisableTLS:   true, // Bitcoin core does not provide TLS by default
 				}

@@ -20,12 +20,13 @@ func init() {
 	runCmd := &cobra.Command{
 		Use:   "run [name]",
 		Short: "Run the coinbuddy and coinserver",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if len(args) > 0 {
-				os.Setenv("SERVICEID", args[0])
-			}
 			ng := NewStratumServer()
 			defer ng.Stop()
+			ng.ConfigureService(args[0],
+				[]string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
+			ng.ParseConfig()
 			ng.Start()
 
 			// Wait until we recieve sigint

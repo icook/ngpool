@@ -13,9 +13,9 @@ type ShareChainConfig struct {
 
 var ShareChain = map[string]*ShareChainConfig{}
 
-func (s *Service) SetupShareChains() {
+func SetupShareChains(rawConfig map[string]interface{}) {
 	// TODO: Chain to array of maps, makes more sense
-	for _, rawConfig := range s.config.GetStringMap("ShareChains") {
+	for _, rawConfig := range rawConfig {
 		var chain ShareChainConfig
 		err := mapstructure.Decode(rawConfig, &chain)
 		if err != nil {

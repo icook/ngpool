@@ -33,38 +33,35 @@ type CoinBuddy struct {
 }
 
 func NewCoinBuddy() *CoinBuddy {
-	config := viper.New()
-
-	config.SetDefault("CoinserverBinary", "bitcoind")
-	config.SetDefault("TemplateType", "getblocktemplate")
-	config.SetDefault("CurrencyCode", "BTC")
-	config.SetDefault("HashingAlgo", "sha256d")
-
-	config.SetDefault("LogLevel", "info")
-	config.SetDefault("BlockListenerBind", "127.0.0.1:3000")
-	config.SetDefault("EventListenerBind", "127.0.0.1:4000")
-	config.SetDefault("NodeConfig.rpcuser", "admin1")
-	config.SetDefault("NodeConfig.rpcpassword", "123")
-	config.SetDefault("NodeConfig.port", "19000")
-	config.SetDefault("NodeConfig.rpcport", "19001")
-	config.SetDefault("NodeConfig.server", "1")
-	config.SetDefault("NodeConfig.datadir", "~/.bitcoin")
-
-	// Load from Env, which will overwrite everything else
-	config.AutomaticEnv()
-
 	cb := &CoinBuddy{
-		config:       config,
 		broadcast:    broadcast.NewBroadcaster(10),
 		lastBlockMtx: sync.RWMutex{},
 	}
-
-	cb.service = service.NewService("coinserver", cb.config)
 	return cb
 }
 
-// Starts all routines associated with this service. Non-blocking
-func (c *CoinBuddy) Run() {
+func (c *CoinBuddy) ConfigureService(name string, etcdEndpoints []string) {
+	c.service = service.NewService("coinserver", etcdEndpoints)
+	c.config = c.service.LoadCommonConfig()
+	c.service.LoadServiceConfig(c.config, name)
+}
+
+func (c *CoinBuddy) ParseConfig() {
+	c.config.SetDefault("CoinserverBinary", "bitcoind")
+	c.config.SetDefault("TemplateType", "getblocktemplate")
+	c.config.SetDefault("CurrencyCode", "BTC")
+	c.config.SetDefault("HashingAlgo", "sha256d")
+
+	c.config.SetDefault("LogLevel", "info")
+	c.config.SetDefault("BlockListenerBind", "127.0.0.1:3000")
+	c.config.SetDefault("EventListenerBind", "127.0.0.1:4000")
+	c.config.SetDefault("NodeConfig.rpcuser", "admin1")
+	c.config.SetDefault("NodeConfig.rpcpassword", "123")
+	c.config.SetDefault("NodeConfig.port", "19000")
+	c.config.SetDefault("NodeConfig.rpcport", "19001")
+	c.config.SetDefault("NodeConfig.server", "1")
+	c.config.SetDefault("NodeConfig.datadir", "~/.bitcoin")
+
 	levelConfig := c.config.GetString("LogLevel")
 	level, err := log.LvlFromString(levelConfig)
 	if err != nil {
@@ -75,8 +72,11 @@ func (c *CoinBuddy) Run() {
 	handler = log.LvlFilterHandler(level, handler)
 	log.Root().SetHandler(handler)
 	log.Info("Set log level", "level", level)
+}
 
-	err = c.RunCoinserver()
+// Starts all routines associated with this service. Non-blocking
+func (c *CoinBuddy) Run() {
+	err := c.RunCoinserver()
 	if err != nil {
 		log.Crit("Coinserver never came up for 90 seconds", "err", err)
 		os.Exit(1)
@@ -84,7 +84,7 @@ func (c *CoinBuddy) Run() {
 	c.generateTemplateExtras()
 	c.RunBlockListener()
 	c.RunEventListener()
-	go c.service.KeepAlive(map[string]interface{}{
+	go c.service.KeepAlive(map[string]string{
 		"algo":          c.config.GetString("HashingAlgo"),
 		"currency":      c.config.GetString("CurrencyCode"),
 		"endpoint":      fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),

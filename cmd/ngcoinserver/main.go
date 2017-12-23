@@ -26,6 +26,9 @@ func init() {
 			}
 			cb := NewCoinBuddy()
 			defer cb.Stop()
+			cb.ConfigureService(args[0],
+				[]string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
+			cb.ParseConfig()
 			cb.Run()
 
 			// Wait until we recieve sigint
