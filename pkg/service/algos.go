@@ -12,14 +12,15 @@ func scryptHash(input []byte) ([]byte, error) {
 }
 
 type Algo struct {
-	Name    string
-	PoWHash HashFunc
-	Diff1   *big.Float
+	Name       string
+	PoWHash    HashFunc
+	ShareDiff1 *big.Float
+	NetDiff1   float64
 }
 
 func (a *Algo) Diff1SharesForDiff(blockTarget float64) (float64, big.Accuracy) {
 	blockTargetBig := big.NewFloat(blockTarget)
-	diff1 := new(big.Float).Set(a.Diff1)
+	diff1 := new(big.Float).Set(a.ShareDiff1)
 	return diff1.Quo(diff1, blockTargetBig).Float64()
 }
 
@@ -30,10 +31,13 @@ func NewAlgoConfig(name string, diff1Hex string, powFunc HashFunc) *Algo {
 		panic(err)
 	}
 
+	shareDiff1, _ := diff1.Float64()
+
 	ac := &Algo{
-		Name:    name,
-		Diff1:   &diff1,
-		PoWHash: powFunc,
+		Name:       name,
+		ShareDiff1: &diff1,
+		NetDiff1:   shareDiff1 / (0xFFFF - 1),
+		PoWHash:    powFunc,
 	}
 	AlgoConfig[name] = ac
 	return ac

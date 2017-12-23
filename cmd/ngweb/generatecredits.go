@@ -194,7 +194,7 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	// Static fee user id, needs to be configurable as well
 	feeUserID := 1
 	q.log.Info("Calculated required shares",
-		"accuracy", acc, "requiredShares", sharesToFind, "diff", block.Difficulty, "diff1", block.algoConfig.Diff1)
+		"accuracy", acc, "requiredShares", sharesToFind, "diff", block.Difficulty, "diff1", block.algoConfig.ShareDiff1)
 
 	userShares, total, err := q.collectShares(sharesToFind, feeUserID, sc.Name, block.MinedAt)
 	if err != nil {
@@ -203,7 +203,7 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	sc.data = map[string]interface{}{
 		"type":         "pplns",
 		"n":            n,
-		"diff1":        block.algoConfig.Diff1,
+		"diff1":        block.algoConfig.ShareDiff1,
 		"sharesToFind": sharesToFind,
 		"sharesFound":  total,
 	}
