@@ -3,24 +3,27 @@ package main
 import (
 	"database/sql"
 	"github.com/gin-gonic/gin"
+	"github.com/icook/ngpool/pkg/service"
 	"github.com/jmoiron/sqlx/types"
 	"github.com/pkg/errors"
 	"time"
 )
 
 type Block struct {
-	Currency   string    `json:"currency"`
-	Height     int64     `json:"height"`
-	Hash       string    `json:"hash"`
-	Status     string    `json:"status"`
-	PowAlgo    string    `json:"powalgo"`
-	Subsidy    int64     `json:"subsidy"`
-	MinedAt    time.Time `db:"mined_at" json:"mined_at"`
-	Difficulty float64   `json:"difficulty"`
+	Currency string    `json:"currency"`
+	Height   int64     `json:"height"`
+	Hash     string    `json:"hash"`
+	Status   string    `json:"status"`
+	PowAlgo  string    `json:"powalgo"`
+	Subsidy  int64     `json:"subsidy"`
+	MinedAt  time.Time `db:"mined_at" json:"mined_at"`
+	Target   float64   `db:"difficulty" json:"target"`
+
+	Difficulty float64 `db:"-" json:"difficulty"`
 }
 
 func (q *NgWebAPI) getBlocks(c *gin.Context) {
-	var blocks []Block
+	var blocks []*Block
 	err := q.db.Select(&blocks,
 		`SELECT
 		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status
@@ -28,6 +31,12 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	if err != nil && err != sql.ErrNoRows {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
+	}
+	for _, block := range blocks {
+		config, ok := service.CurrencyConfig[block.Currency]
+		if ok {
+			block.Difficulty = config.Algo.NetDiff1 / block.Target
+		}
 	}
 	q.apiSuccess(c, 200, res{"blocks": blocks})
 }
