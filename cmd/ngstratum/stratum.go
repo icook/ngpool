@@ -104,10 +104,6 @@ func NewStratumServer() *StratumServer {
 		jobCast:      broadcast.NewBroadcaster(10),
 	}
 	ng.service = service.NewService("stratum", config)
-	ng.service.SetLabels(map[string]interface{}{
-		"endpoint": config.GetString("StratumBind"),
-	})
-
 	return ng
 }
 
@@ -167,7 +163,9 @@ func (n *StratumServer) Start() {
 		os.Exit(1)
 	}
 	go n.HandleCoinserverWatcherUpdates(updates, tmplKeys)
-	go n.service.KeepAlive()
+	go n.service.KeepAlive(map[string]interface{}{
+		"endpoint": n.config.GetString("StratumBind"),
+	})
 
 	if n.config.GetBool("EnableCpuminer") {
 		go n.Miner()

@@ -60,16 +60,10 @@ func NewCoinBuddy() *CoinBuddy {
 	}
 
 	cb.service = service.NewService("coinserver", cb.config)
-	cb.service.SetLabels(map[string]interface{}{
-		"algo":          cb.config.GetString("HashingAlgo"),
-		"currency":      cb.config.GetString("CurrencyCode"),
-		"endpoint":      fmt.Sprintf("http://%s/", cb.config.GetString("EventListenerBind")),
-		"template_type": cb.config.GetString("TemplateType"),
-	})
-
 	return cb
 }
 
+// Starts all routines associated with this service. Non-blocking
 func (c *CoinBuddy) Run() {
 	levelConfig := c.config.GetString("LogLevel")
 	level, err := log.LvlFromString(levelConfig)
@@ -90,13 +84,18 @@ func (c *CoinBuddy) Run() {
 	c.generateTemplateExtras()
 	c.RunBlockListener()
 	c.RunEventListener()
-	go c.service.KeepAlive()
+	go c.service.KeepAlive(map[string]interface{}{
+		"algo":          c.config.GetString("HashingAlgo"),
+		"currency":      c.config.GetString("CurrencyCode"),
+		"endpoint":      fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),
+		"template_type": c.config.GetString("TemplateType"),
+	})
 }
 
+// We assemble a byte string of extra data to put in the getblocktemplate call
+// currently used to inject chainid for aux networks, since this is the only
+// missing value from GBT to generate aux blocks
 func (c *CoinBuddy) generateTemplateExtras() {
-	// We assemble a byte string of extra data to put in the getblocktemplate
-	// call currently used to inject chainid for aux networks, since this is
-	// the only missing value from GBT to generate aux blocks
 	templateExtras := map[string]interface{}{}
 	if c.config.GetString("TemplateType") == "getblocktemplate_aux" {
 		params := []json.RawMessage{}

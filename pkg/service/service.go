@@ -7,22 +7,18 @@ import (
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
-	"gopkg.in/yaml.v2"
 	"os"
 	"strings"
 	"time"
 )
 
 type Service struct {
-	config        *viper.Viper
-	serviceID     string
-	namespace     string
-	labels        map[string]interface{}
-	pushStatus    chan map[string]interface{}
-	etcd          client.Client
-	etcdKeys      client.KeysAPI
-	configKeyPath string
-	statusKeyPath string
+	config     *viper.Viper
+	serviceID  string
+	namespace  string
+	pushStatus chan map[string]interface{}
+	etcd       client.Client
+	etcdKeys   client.KeysAPI
 }
 
 type ServiceStatusUpdate struct {
@@ -44,7 +40,7 @@ func NewService(namespace string, config *viper.Viper) *Service {
 		namespace: namespace,
 		config:    config,
 	}
-	s.SetServiceID(s.config.GetString("ServiceID"))
+	s.serviceID = s.config.GetString("ServiceID")
 	s.config.SetDefault("EtcdEndpoint", []string{"http://127.0.0.1:2379", "http://127.0.0.1:4001"})
 
 	log.Info("Loaded service, pulling config from etcd", "service", s.serviceID)
@@ -83,16 +79,6 @@ func NewService(namespace string, config *viper.Viper) *Service {
 	return s
 }
 
-func (s *Service) SetLabels(new map[string]interface{}) {
-	s.labels = new
-}
-
-func (s *Service) SetServiceID(id string) {
-	s.serviceID = id
-	s.configKeyPath = "/config/" + s.namespace + "/" + s.serviceID
-	s.statusKeyPath = "/status/" + s.namespace + "/" + s.serviceID
-}
-
 func (s *Service) parseNode(node *client.Node) (string, *ServiceStatus) {
 	// Parse all the node details about the watcher
 	lbi := strings.LastIndexByte(node.Key, '/') + 1
@@ -103,6 +89,8 @@ func (s *Service) parseNode(node *client.Node) (string, *ServiceStatus) {
 	return serviceID, &status
 }
 
+// Requests all services of a specific namespace. This is used in the same
+// context as ServiceWatcher, except for simple script executions
 func (s *Service) LoadServices(namespace string) (map[string]*ServiceStatus, error) {
 	statuses, _, err := s.loadServices(namespace)
 	return statuses, err
@@ -135,6 +123,9 @@ func (s *Service) loadServices(namespace string) (map[string]*ServiceStatus, uin
 	return services, res.Index, nil
 }
 
+// This watches for services of a specific namespace to change, and broadcasts
+// those changes over the provided channel. How the updates are handled is up
+// to the reciever
 func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdate, error) {
 	var (
 		services           map[string]*ServiceStatus = make(map[string]*ServiceStatus)
@@ -212,13 +203,13 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 	return updates, nil
 }
 
-func (s *Service) KeepAlive() error {
+func (s *Service) KeepAlive(labels map[string]interface{}) error {
 	var (
 		lastValue  string
 		lastStatus map[string]interface{} = make(map[string]interface{})
 		serviceID  string                 = s.config.GetString("ServiceID")
 	)
-	if len(s.labels) == 0 {
+	if len(labels) == 0 {
 		log.Crit("Cannot start service KeepAlive without labels")
 		os.Exit(1)
 	}
@@ -230,7 +221,7 @@ func (s *Service) KeepAlive() error {
 
 		// Serialize a new value to write
 		valueMap := map[string]interface{}{}
-		valueMap["labels"] = s.labels
+		valueMap["labels"] = labels
 		valueMap["status"] = lastStatus
 		valueRaw, err := json.Marshal(valueMap)
 		value := string(valueRaw)
@@ -258,17 +249,4 @@ func (s *Service) KeepAlive() error {
 		}
 	}
 	return nil
-}
-
-func (s *Service) getDefaultConfig(common bool) string {
-	if common {
-		return ""
-	} else {
-		b, err := yaml.Marshal(s.config.AllSettings())
-		if err != nil {
-			log.Crit("Failed to serialize config", "err", err)
-			os.Exit(1)
-		}
-		return string(b)
-	}
 }

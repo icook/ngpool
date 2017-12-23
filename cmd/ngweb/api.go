@@ -41,7 +41,6 @@ func NewNgWebAPI() *NgWebAPI {
 	config := viper.New()
 	config.SetConfigType("yaml")
 	config.SetDefault("LogLevel", "info")
-	config.SetDefault("StratumBind", "127.0.0.1:3333")
 	config.SetDefault("DbConnectionString",
 		"user=ngpool dbname=ngpool sslmode=disable password=knight")
 	ngw.config = config
@@ -52,9 +51,6 @@ func NewNgWebAPI() *NgWebAPI {
 func (q *NgWebAPI) ParseConfig() {
 	// Load our configuration info
 	q.service = service.NewService("api", q.config)
-	q.service.SetLabels(map[string]interface{}{
-		"endpoint": q.config.GetString("StratumBind"),
-	})
 	// TODO: Check for secure JWTSecret
 
 	levelConfig := q.config.GetString("LogLevel")
