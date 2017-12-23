@@ -19,16 +19,16 @@ type Block struct {
 	PowAlgo  string    `json:"powalgo"`
 	Subsidy  int64     `json:"subsidy"`
 	MinedAt  time.Time `db:"mined_at" json:"mined_at"`
-	Target   float64   `db:"difficulty" json:"target"`
+	Target   float64   `json:"target"`
 
-	Difficulty float64 `db:"-" json:"difficulty"`
+	Difficulty float64 `json:"difficulty"`
 }
 
 func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	var blocks = []*Block{}
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	base := psql.Select("currency, height, hash, powalgo, subsidy, mined_at, difficulty, status").
+	base := psql.Select("currency, height, hash, powalgo, subsidy, mined_at, target, status").
 		From("block").OrderBy("mined_at DESC").
 		Limit(100).Offset(uint64(page * 100))
 	if maturity, ok := c.GetQueryArray("maturity"); ok {
@@ -65,7 +65,7 @@ func (q *NgWebAPI) getBlock(c *gin.Context) {
 	var block BlockSingle
 	err := q.db.QueryRowx(
 		`SELECT
-		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status, payout_data, powhash
+		currency, height, hash, powalgo, subsidy, mined_at, target, status, payout_data, powhash
 		FROM block WHERE hash = $1`, blockhash).StructScan(&block)
 	if err == sql.ErrNoRows {
 		q.apiError(c, 404, APIError{

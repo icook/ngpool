@@ -28,7 +28,7 @@ import (
 
 type BlockSolve struct {
 	powhash      *big.Int
-	difficulty   *big.Int
+	target       *big.Int
 	coinbaseHash []byte
 	height       int64
 	subsidy      int64
@@ -203,7 +203,7 @@ func (n *StratumServer) ListenShares() {
 			_, err = n.db.Exec(
 				`INSERT INTO block
 				(height, currency, powalgo, hash, powhash, subsidy, mined_at,
-					mined_by, difficulty, coinbase_hash)
+					mined_by, target, coinbase_hash)
 				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 				block.height,
 				currencyCode,
@@ -213,7 +213,7 @@ func (n *StratumServer) ListenShares() {
 				block.subsidy,
 				share.time,
 				share.username,
-				block.difficulty.String(),
+				block.target.String(),
 				hex.EncodeToString(block.coinbaseHash))
 			if err != nil {
 				log.Error("Failed to save block", "err", err)

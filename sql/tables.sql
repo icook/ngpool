@@ -39,7 +39,7 @@ CREATE TABLE block
     subsidy numeric NOT NULL,
     mined_at timestamp NOT NULL,
     mined_by varchar NOT NULL,
-    difficulty double precision NOT NULL,
+    target double precision NOT NULL,
     status block_status DEFAULT 'immature' NOT NULL,
     payout_data json DEFAULT '{}'::JSON NOT NULL,
     CONSTRAINT block_pkey PRIMARY KEY (hash),

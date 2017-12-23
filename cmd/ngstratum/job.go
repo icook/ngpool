@@ -203,7 +203,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 			subsidy:      j.subsidy,
 			height:       j.height,
 			powhash:      bigHsh,
-			difficulty:   j.target,
+			target:       j.target,
 		}
 	}
 
@@ -216,7 +216,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 				height:       mj.height,
 				coinbaseHash: mj.coinbaseHash,
 				powhash:      bigHsh,
-				difficulty:   mj.target,
+				target:       mj.target,
 			}
 		}
 	}
