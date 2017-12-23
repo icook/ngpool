@@ -47,10 +47,10 @@ type ShareChainPayout struct {
 
 	// Values used for computing user payouts
 	config         *service.ShareChainConfig
-	subsidy        int64
-	subsidyPayable int64
-	subsidyFee     int64
-	data           map[string]interface{}
+	Subsidy        int64
+	SubsidyPayable int64
+	SubsidyFee     int64
+	Data           map[string]interface{}
 }
 
 type Credit struct {
@@ -105,8 +105,8 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 	}
 	var totalCredited int64 = 0
 	for _, sc := range sharechains {
-		sc.subsidy = int64((sc.Difficulty / shareChainsTotal) * float64(block.Subsidy))
-		totalCredited += sc.subsidy
+		sc.Subsidy = int64((sc.Difficulty / shareChainsTotal) * float64(block.Subsidy))
+		totalCredited += sc.Subsidy
 	}
 	// Give the rounded satoshi to the first sharechain, it won't ever be much
 	// (if any). This keeps accounting clean
@@ -116,7 +116,7 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 	rounded := block.Subsidy - totalCredited
 	q.log.Debug("Giving rounded sharechain remainder",
 		"remainder", rounded, "sharechain", sharechains[0].Name)
-	sharechains[0].subsidy += rounded
+	sharechains[0].Subsidy += rounded
 
 	// Calculate fees for all chains and run payout function
 	tx, err := q.db.Begin()
@@ -124,8 +124,8 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 		return err
 	}
 	for _, sc := range sharechains {
-		sc.subsidyFee = int64(sc.config.Fee * float64(sc.subsidy))
-		sc.subsidyPayable = sc.subsidy - sc.subsidyFee
+		sc.SubsidyFee = int64(sc.config.Fee * float64(sc.Subsidy))
+		sc.SubsidyPayable = sc.Subsidy - sc.SubsidyFee
 		fmt.Printf("%+v\n", sc)
 		var credits []*Credit
 		switch sc.config.PayoutMethod {
@@ -153,12 +153,12 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 	// visible on the frontend to help users and admins understand how payouts
 	// are operating, debugging, and testing
 	payoutData := map[string]interface{}{
-		"credited_at":                time.Now(),
-		"sharechain_round_amount":    rounded,
-		"sharechain_round_recipient": sharechains[0].Name,
-		"sharechains":                sharechains,
-		"sharechain_total":           shareChainsTotal,
-		"last_block_time":            block.lastBlockTime,
+		"credited_at":                   time.Now(),
+		"sharechain_rounding_amount":    rounded,
+		"sharechain_rounding_recipient": sharechains[0].Name,
+		"sharechains":                   sharechains,
+		"sharechain_total":              shareChainsTotal,
+		"last_block_time":               block.lastBlockTime,
 	}
 	serial, err := json.Marshal(payoutData)
 	if err != nil {
@@ -200,7 +200,7 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	if err != nil {
 		return nil, err
 	}
-	sc.data = map[string]interface{}{
+	sc.Data = map[string]interface{}{
 		"type":         "pplns",
 		"n":            n,
 		"diff1":        block.algoConfig.ShareDiff1,
@@ -215,8 +215,8 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 		c := &Credit{
 			UserID:     userID,
 			Difficulty: shares,
-			Amount:     int64(float64(sc.subsidyPayable) * fract),
-			Fee:        float64(sc.subsidyFee) * fract,
+			Amount:     int64(float64(sc.SubsidyPayable) * fract),
+			Fee:        float64(sc.SubsidyFee) * fract,
 		}
 		fmt.Printf("%+v\n", c)
 		credits = append(credits, c)
