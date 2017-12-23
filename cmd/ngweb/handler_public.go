@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx/types"
 	"github.com/pkg/errors"
@@ -18,20 +19,20 @@ type Block struct {
 	Difficulty float64   `json:"difficulty"`
 }
 
-func (q *NgWebAPI) getBlock(c *gin.Context) {
+func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	var blocks []Block
 	err := q.db.Select(&blocks,
 		`SELECT
 		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status
 		FROM block LIMIT 100`)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
 	}
 	q.apiSuccess(c, 200, res{"blocks": blocks})
 }
 
-func (q *NgWebAPI) getBlocks(c *gin.Context) {
+func (q *NgWebAPI) getBlock(c *gin.Context) {
 	var blockhash = c.Param("hash")
 
 	type BlockSingle struct {
@@ -43,6 +44,11 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 		`SELECT
 		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status, payout_data
 		FROM block WHERE hash = $1`, blockhash).StructScan(&block)
+	if err == sql.ErrNoRows {
+		q.apiError(c, 404, APIError{
+			Code: "invalid_block", Title: "Block not found"})
+		return
+	}
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
