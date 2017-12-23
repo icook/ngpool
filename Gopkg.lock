@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/Masterminds/squirrel"
+  packages = ["."]
+  revision = "a6b93000bd219143c56c16e6cb1c4b91da3f224b"
+  version = "v1.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/armon/consul-api"
   packages = ["."]
@@ -161,8 +167,20 @@
 [[projects]]
   branch = "master"
   name = "github.com/jmoiron/sqlx"
-  packages = [".","reflectx"]
+  packages = [".","reflectx","types"]
   revision = "99f3ad6d85ae53d0fecf788ab62d0e9734b3c117"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/lann/builder"
+  packages = ["."]
+  revision = "f22ce00fd9394014049dad11c244859432bd6820"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/lann/ps"
+  packages = ["."]
+  revision = "62de8c46ede02a7675c4c79c84883eb164cb71e3"
 
 [[projects]]
   branch = "master"
@@ -347,6 +365,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d0d3ace2b11d8a9069eecb796ae574b45899f594b6a55377b10e3ebfcd81fa80"
+  inputs-digest = "5a405be3f8a1ab3d907d76875c0859f4333212393711799a3bab62efc1fe787e"
   solver-name = "gps-cdcl"
   solver-version = 1

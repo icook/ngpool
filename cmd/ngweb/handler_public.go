@@ -2,10 +2,12 @@ package main
 
 import (
 	"database/sql"
+	sq "github.com/Masterminds/squirrel"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/ngpool/pkg/service"
 	"github.com/jmoiron/sqlx/types"
 	"github.com/pkg/errors"
+	"strconv"
 	"time"
 )
 
@@ -24,10 +26,21 @@ type Block struct {
 
 func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	var blocks []*Block
-	err := q.db.Select(&blocks,
-		`SELECT
-		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status
-		FROM block ORDER BY mined_at DESC LIMIT 100`)
+	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+	base := psql.Select("currency, height, hash, powalgo, subsidy, mined_at, difficulty, status").
+		From("block").OrderBy("mined_at DESC").
+		Limit(100).Offset(uint64(page * 100))
+	if maturity, ok := c.GetQueryArray("maturity"); ok {
+		base = base.Where(sq.Eq{"status": maturity})
+	}
+	qstring, args, err := base.ToSql()
+	q.log.Info("", "t", qstring, "args", args)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	err = q.db.Select(&blocks, qstring, args...)
 	if err != nil && err != sql.ErrNoRows {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
@@ -47,11 +60,12 @@ func (q *NgWebAPI) getBlock(c *gin.Context) {
 	type BlockSingle struct {
 		Block
 		PayoutData types.JSONText `json:"payout_data" db:"payout_data"`
+		PoWHash    string         `json:"powhash" db:"powhash"`
 	}
 	var block BlockSingle
 	err := q.db.QueryRowx(
 		`SELECT
-		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status, payout_data
+		currency, height, hash, powalgo, subsidy, mined_at, difficulty, status, payout_data, powhash
 		FROM block WHERE hash = $1`, blockhash).StructScan(&block)
 	if err == sql.ErrNoRows {
 		q.apiError(c, 404, APIError{
