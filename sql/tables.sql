@@ -27,7 +27,7 @@ CREATE TABLE utxo
     CONSTRAINT utxo_pkey PRIMARY KEY (hash)
 );
 
-CREATE TYPE block_status AS ENUM ('immature', 'orphan', 'mature', 'credited');
+CREATE TYPE block_status AS ENUM ('immature', 'orphan', 'mature');
 CREATE TABLE block
 (
     currency varchar NOT NULL,
@@ -41,6 +41,7 @@ CREATE TABLE block
     mined_by varchar NOT NULL,
     target double precision NOT NULL,
     status block_status DEFAULT 'immature' NOT NULL,
+    credited boolean DEFAULT false NOT NULL,
     payout_data json DEFAULT '{}'::JSON NOT NULL,
     CONSTRAINT block_pkey PRIMARY KEY (hash),
     CONSTRAINT coinbase_hash_fk FOREIGN KEY (coinbase_hash)

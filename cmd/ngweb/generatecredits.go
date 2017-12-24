@@ -166,7 +166,7 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 		return err
 	}
 	result, err := tx.Exec(
-		`UPDATE block SET status = 'credited', payout_data = $1 WHERE hash = $2`,
+		`UPDATE block SET credited = true, payout_data = $1 WHERE hash = $2`,
 		serial, block.Hash)
 	if err != nil {
 		tx.Rollback()
@@ -277,7 +277,7 @@ func (q *NgWebAPI) GenerateCredits() error {
 	var blocks []payoutBlock
 	err := q.db.Select(&blocks,
 		`SELECT currency, height, hash, powalgo, subsidy, mined_at, target
-		FROM block WHERE status = 'mature'`)
+		FROM block WHERE status = 'mature' AND credited = false`)
 	if err != nil {
 		return err
 	}
