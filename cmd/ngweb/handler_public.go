@@ -109,3 +109,11 @@ func (q *NgWebAPI) getCommon(c *gin.Context) {
 		"algos":      service.AlgoConfig,
 	})
 }
+
+func (q *NgWebAPI) getCoinservers(c *gin.Context) {
+	q.coinserversMtx.RLock()
+	q.apiSuccess(c, 200, res{
+		"coinservers": q.coinservers,
+	})
+	q.coinserversMtx.RUnlock()
+}

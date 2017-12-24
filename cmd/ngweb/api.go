@@ -29,14 +29,21 @@ type NgWebAPI struct {
 	service *service.Service
 
 	currencyRPC    map[string]*rpcclient.Client
-	currencyRPCMtx *sync.Mutex
+	currencyRPCMtx *sync.RWMutex
+
+	coinservers    map[string]*service.ServiceStatus
+	coinserversMtx *sync.RWMutex
 }
 
 func NewNgWebAPI() *NgWebAPI {
 	var ngw = NgWebAPI{
-		log:            log.New(),
-		currencyRPCMtx: &sync.Mutex{},
+		log: log.New(),
+
 		currencyRPC:    map[string]*rpcclient.Client{},
+		currencyRPCMtx: &sync.RWMutex{},
+
+		coinservers:    map[string]*service.ServiceStatus{},
+		coinserversMtx: &sync.RWMutex{},
 	}
 
 	return &ngw
@@ -95,6 +102,7 @@ func (q *NgWebAPI) SetupGin() {
 	r.GET("/v1/blocks", q.getBlocks)
 	r.GET("/v1/block/:hash", q.getBlock)
 	r.GET("/v1/common", q.getCommon)
+	r.GET("/v1/coinservers", q.getCoinservers)
 	r.GET("createpayout/:currency", q.getCreatePayout)
 
 	api := r.Group("/v1/user/")
@@ -127,7 +135,14 @@ func (q *NgWebAPI) WatchCoinservers() {
 				q.currencyRPCMtx.Lock()
 				delete(q.currencyRPC, currency)
 				q.currencyRPCMtx.Unlock()
+
+				q.coinserversMtx.Lock()
+				delete(q.coinservers, update.ServiceID)
+				q.coinserversMtx.Unlock()
 			case "updated":
+				q.coinserversMtx.Lock()
+				q.coinservers[update.ServiceID] = update.Status
+				q.coinserversMtx.Unlock()
 			case "added":
 				endpoint := labels["endpoint"]
 				connCfg := &rpcclient.ConnConfig{
@@ -143,6 +158,10 @@ func (q *NgWebAPI) WatchCoinservers() {
 				q.currencyRPCMtx.Lock()
 				q.currencyRPC[currency] = client
 				q.currencyRPCMtx.Unlock()
+
+				q.coinserversMtx.Lock()
+				q.coinservers[update.ServiceID] = update.Status
+				q.coinserversMtx.Unlock()
 			default:
 				q.log.Warn("Unrecognized action from service watcher", "action", update.Action)
 			}
