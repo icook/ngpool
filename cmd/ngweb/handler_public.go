@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx/types"
 	"github.com/pkg/errors"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -31,11 +32,11 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	base := psql.Select("currency, height, hash, powalgo, subsidy, mined_at, target, status").
 		From("block").OrderBy("mined_at DESC").
 		Limit(100).Offset(uint64(page * 100))
-	if maturity, ok := c.GetQueryArray("maturity"); ok {
-		base = base.Where(sq.Eq{"status": maturity})
+	if maturity, ok := c.GetQuery("maturity"); ok && maturity != "" {
+		arr := strings.Split(maturity, ",")
+		base = base.Where(sq.Eq{"status": arr})
 	}
 	qstring, args, err := base.ToSql()
-	q.log.Info("", "t", qstring, "args", args)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
