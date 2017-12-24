@@ -30,7 +30,7 @@ type ServiceStatus struct {
 	ServiceID  string
 	Status     map[string]interface{}
 	Labels     map[string]string
-	UpdateTime time.Time
+	UpdateTime time.Time `json:"update_time"`
 }
 
 func NewService(namespace string, etcdEndpoints []string) *Service {
@@ -248,6 +248,12 @@ func (s *Service) KeepAlive(labels map[string]string) error {
 			value = ""
 		} else {
 			lastValue = value
+
+			// Now add the timestamp. This should'nt be included in the
+			// comparison to last value since it's not part of the status
+			valueMap["update_time"] = time.Now().UTC()
+			valueRaw, _ = json.Marshal(valueMap)
+			value = string(valueRaw)
 		}
 
 		// Set TTL update, or new information
