@@ -29,9 +29,10 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	var blocks = []*Block{}
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
 	base := psql.Select("currency, height, hash, powalgo, subsidy, mined_at, target, status").
 		From("block").OrderBy("mined_at DESC").
-		Limit(100).Offset(uint64(page * 100))
+		Limit(uint64(pageSize)).Offset(uint64(page * pageSize))
 	if maturity, ok := c.GetQuery("maturity"); ok && maturity != "" {
 		arr := strings.Split(maturity, ",")
 		base = base.Where(sq.Eq{"status": arr})
