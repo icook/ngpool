@@ -277,7 +277,7 @@ func (q *NgWebAPI) GenerateCredits() error {
 	var blocks []payoutBlock
 	err := q.db.Select(&blocks,
 		`SELECT currency, height, hash, powalgo, subsidy, mined_at, target
-		FROM block WHERE status = 'mature' AND credited = false`)
+		FROM block WHERE status = 'mature' AND credited = false FOR UPDATE`)
 	if err != nil {
 		return err
 	}
