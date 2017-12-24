@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"golang.org/x/crypto/scrypt"
 	"math/big"
 )
@@ -13,9 +14,24 @@ func scryptHash(input []byte) ([]byte, error) {
 
 type Algo struct {
 	Name       string
-	PoWHash    HashFunc `json:"-"`
+	PoWHash    HashFunc
 	ShareDiff1 *big.Float
 	NetDiff1   float64
+}
+
+func (u *Algo) MarshalJSON() ([]byte, error) {
+	sharediff1Float, _ := u.ShareDiff1.Float64()
+	return json.Marshal(&struct {
+		Name       string   `json:"name"`
+		PoWHash    HashFunc `json:"-"`
+		ShareDiff1 float64  `json:"share_diff1"`
+		NetDiff1   float64  `json:"net_diff1"`
+	}{
+		Name:       u.Name,
+		PoWHash:    u.PoWHash,
+		ShareDiff1: sharediff1Float,
+		NetDiff1:   u.NetDiff1,
+	})
 }
 
 func (a *Algo) Diff1SharesForTarget(blockTarget float64) (float64, big.Accuracy) {

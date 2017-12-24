@@ -80,14 +80,14 @@ type ChainConfig struct {
 
 func (u *ChainConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
-		Code                 string
-		BlockMatureConfirms  int64
-		FlushAux             bool
-		PayoutTransactionFee int
+		Code                 string `json:"code"`
+		BlockMatureConfirms  int64  `json:"block_mature_confirms"`
+		FlushAux             bool   `json:"flush_aux"`
+		PayoutTransactionFee int    `json:"payout_transaction_fee"`
 
-		Algo                string
-		BlockSubsidyAddress string
-		FeeAddress          string
+		Algo                string `json:"algo"`
+		BlockSubsidyAddress string `json:"block_subsidy_address"`
+		FeeAddress          string `json:"fee_address"`
 	}{
 		Code:                 u.Code,
 		BlockMatureConfirms:  u.BlockMatureConfirms,
