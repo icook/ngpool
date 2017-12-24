@@ -27,10 +27,10 @@ type ServiceStatusUpdate struct {
 }
 
 type ServiceStatus struct {
-	ServiceID  string
-	Status     map[string]interface{}
-	Labels     map[string]string
-	UpdateTime time.Time `json:"update_time"`
+	ServiceID  string                 `json:"service_id"`
+	Status     map[string]interface{} `json:"status"`
+	Labels     map[string]string      `json:"labels"`
+	UpdateTime time.Time              `json:"update_time"`
 }
 
 func NewService(namespace string, etcdEndpoints []string) *Service {
