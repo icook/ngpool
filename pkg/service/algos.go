@@ -13,7 +13,7 @@ func scryptHash(input []byte) ([]byte, error) {
 
 type Algo struct {
 	Name       string
-	PoWHash    HashFunc
+	PoWHash    HashFunc `json:"-"`
 	ShareDiff1 *big.Float
 	NetDiff1   float64
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -72,9 +73,30 @@ type ChainConfig struct {
 	PayoutTransactionFee int
 
 	Algo                *Algo
-	Params              *chaincfg.Params
+	Params              *chaincfg.Params `json:"-"`
 	BlockSubsidyAddress *btcutil.Address
 	FeeAddress          *btcutil.Address
+}
+
+func (u *ChainConfig) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&struct {
+		Code                 string
+		BlockMatureConfirms  int64
+		FlushAux             bool
+		PayoutTransactionFee int
+
+		Algo                string
+		BlockSubsidyAddress string
+		FeeAddress          string
+	}{
+		Code:                 u.Code,
+		BlockMatureConfirms:  u.BlockMatureConfirms,
+		FlushAux:             u.FlushAux,
+		PayoutTransactionFee: u.PayoutTransactionFee,
+		Algo:                 u.Algo.Name,
+		BlockSubsidyAddress:  (*u.BlockSubsidyAddress).String(),
+		FeeAddress:           (*u.FeeAddress).String(),
+	})
 }
 
 // This is a global lookup for currency information. All programs load "common"

@@ -94,6 +94,7 @@ func (q *NgWebAPI) SetupGin() {
 	r.POST("/v1/login", q.postLogin)
 	r.GET("/v1/blocks", q.getBlocks)
 	r.GET("/v1/block/:hash", q.getBlock)
+	r.GET("/v1/common", q.getCommon)
 	r.GET("createpayout/:currency", q.getCreatePayout)
 
 	api := r.Group("/v1/user/")
