@@ -175,10 +175,10 @@ func (s *Service) ServiceWatcher(watchNamespace string) (chan ServiceStatusUpdat
 			var action string
 			if res.Action == "expire" {
 				if exists {
-					delete(services, serviceID)
 					// Service status from the etcd notification will be nil,
 					// so pull it
 					serviceStatus = services[serviceID]
+					delete(services, serviceID)
 					action = "removed"
 				}
 			} else if res.Action == "set" || res.Action == "update" {
