@@ -34,8 +34,13 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 		From("block").OrderBy("mined_at DESC").
 		Limit(uint64(pageSize)).Offset(uint64(page * pageSize))
 	if maturity, ok := c.GetQuery("maturity"); ok && maturity != "" {
-		arr := strings.Split(maturity, ",")
-		base = base.Where(sq.Eq{"status": arr})
+		base = base.Where(sq.Eq{"status": strings.Split(maturity, ",")})
+	}
+	if powalgo, ok := c.GetQuery("powalgo"); ok && powalgo != "" {
+		base = base.Where(sq.Eq{"powalgo": strings.Split(powalgo, ",")})
+	}
+	if currency, ok := c.GetQuery("currency"); ok && currency != "" {
+		base = base.Where(sq.Eq{"currency": strings.Split(currency, ",")})
 	}
 	qstring, args, err := base.ToSql()
 	if err != nil {
