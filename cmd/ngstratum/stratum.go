@@ -407,12 +407,8 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 		res := string(rawResult[1 : len(rawResult)-1])
 		if err != nil {
 			logger.Info("Error submitting block", "err", err)
-		} else if res == "" {
-			logger.Info("Found a block!")
-		} else if res == "inconclusive" {
-			logger.Info("Found a block! (inconclusive)")
 		} else {
-			logger.Info("Maybe found a block", "resp", res)
+			logger.Info("Submitted block", "resp", res)
 		}
 	}
 }
