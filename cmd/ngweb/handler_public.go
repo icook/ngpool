@@ -68,11 +68,13 @@ func (q *NgWebAPI) getBlock(c *gin.Context) {
 		Block
 		PayoutData types.JSONText `json:"payout_data" db:"payout_data"`
 		PoWHash    string         `json:"powhash" db:"powhash"`
+		Credited   bool           `json:"credited"`
 	}
 	var block BlockSingle
 	err := q.db.QueryRowx(
 		`SELECT
-		currency, height, hash, powalgo, subsidy, mined_at, target, status, payout_data, powhash
+		currency, height, hash, powalgo, subsidy, mined_at, target, status,
+		payout_data, powhash, credited
 		FROM block WHERE hash = $1`, blockhash).StructScan(&block)
 	if err == sql.ErrNoRows {
 		q.apiError(c, 404, APIError{
