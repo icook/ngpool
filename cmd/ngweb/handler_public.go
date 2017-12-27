@@ -90,7 +90,7 @@ func (q *NgWebAPI) getBlock(c *gin.Context) {
 		Amount     int64  `json:"amount"`
 		ShareChain string `json:"sharechain"`
 	}
-	var credits []Credit
+	var credits = []Credit{}
 	err = q.db.Select(&credits,
 		`SELECT users.username, credit.user_id, credit.amount, credit.sharechain
 		FROM credit LEFT JOIN users ON credit.user_id = users.id
