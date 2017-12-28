@@ -130,6 +130,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/google/go-querystring"
+  packages = ["query"]
+  revision = "53e6ce116135b80d037921a7fdd5138cf32d7a8a"
+
+[[projects]]
+  branch = "master"
   name = "github.com/hashicorp/hcl"
   packages = [".","hcl/ast","hcl/parser","hcl/scanner","hcl/strconv","hcl/token","json/parser","json/scanner","json/token"]
   revision = "23c074d0eceb2b8a5bfdbb271ab780cde70f05a8"
@@ -181,6 +187,12 @@
   name = "github.com/lann/ps"
   packages = ["."]
   revision = "62de8c46ede02a7675c4c79c84883eb164cb71e3"
+
+[[projects]]
+  name = "github.com/levigross/grequests"
+  packages = ["."]
+  revision = "3f92c0acb6cd7f2b11aa81f82a33783249fc1bcd"
+  version = "0.9"
 
 [[projects]]
   branch = "master"
@@ -329,7 +341,7 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
-  packages = ["context"]
+  packages = ["context","idna","publicsuffix"]
   revision = "a8b9294777976932365dabb6640cf1468d95c70f"
 
 [[projects]]
@@ -341,7 +353,7 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/text"
-  packages = ["internal/gen","internal/triegen","internal/ucd","transform","unicode/cldr","unicode/norm"]
+  packages = ["collate","collate/build","internal/colltab","internal/gen","internal/tag","internal/triegen","internal/ucd","language","secure/bidirule","transform","unicode/bidi","unicode/cldr","unicode/norm","unicode/rangetable"]
   revision = "75cc3cad82b5f47d3fb229ddda8c5167da14f294"
 
 [[projects]]
@@ -365,6 +377,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "5a405be3f8a1ab3d907d76875c0859f4333212393711799a3bab62efc1fe787e"
+  inputs-digest = "f2ce3525cb9c207c48c3c51bfcde1fb7cedf6d383bbaade65de556d9107d51df"
   solver-name = "gps-cdcl"
   solver-version = 1

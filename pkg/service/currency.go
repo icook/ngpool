@@ -102,10 +102,12 @@ func (u *ChainConfig) MarshalJSON() ([]byte, error) {
 // This is a global lookup for currency information. All programs load "common"
 // configuration on start and populate this by calling "SetupCurrencies"
 var CurrencyConfig = map[string]*ChainConfig{}
+var RawCurrencyConfig map[string]interface{}
 
 // This parses the viper config structure using ChainConfigDecoder to populate
 // CurrencyConfig with ChainConfig structures
 func SetupCurrencies(rawConfig map[string]interface{}) {
+	RawCurrencyConfig = rawConfig
 	for _, rawConfig := range rawConfig {
 		var config ChainConfigDecoder
 		err := mapstructure.Decode(rawConfig, &config)
