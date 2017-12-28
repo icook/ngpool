@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/icook/btcd/rpcclient"
 	log "github.com/inconshreveable/log15"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +32,16 @@ func NewCoinserver(overrideConfig map[string]string, blocknotify string, coinser
 	for key, val := range overrideConfig {
 		config[key] = val
 	}
-	dir, _ := homedir.Expand(config["datadir"])
+	dir, err := homedir.Expand(config["datadir"])
+	if err != nil {
+		log.Crit("Failed to parse datadir", "err", err)
+		os.Exit(1)
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		log.Crit("Failed to parse datadir", "err", err)
+		os.Exit(1)
+	}
 	config["datadir"] = dir
 	config["pid"] = path.Join(config["datadir"], "coinserver.pid")
 	args := []string{}
