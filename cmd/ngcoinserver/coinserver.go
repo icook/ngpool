@@ -191,3 +191,33 @@ func (c *Coinserver) WaitUntilUp() error {
 	}
 	return err
 }
+
+// Assumes wallet isn't encrypted
+func (c *Coinserver) GenerateKeypair() (string, string, error) {
+	resp, err := c.client.RawRequest("getnewaddress", nil)
+	if err != nil {
+		return "", "", err
+	}
+	var pubkey string
+	err = json.Unmarshal(resp, &pubkey)
+	if err != nil {
+		return "", "", err
+	}
+
+	res, err := json.Marshal(pubkey)
+	if err != nil {
+		return "", "", err
+	}
+	params := []json.RawMessage{res}
+	resp, err = c.client.RawRequest("dumpprivkey", params)
+	if err != nil {
+		return "", "", err
+	}
+	var privkey string
+	err = json.Unmarshal(resp, &privkey)
+	if err != nil {
+		return "", "", err
+	}
+
+	return pubkey, privkey, nil
+}

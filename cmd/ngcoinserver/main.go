@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	log "github.com/inconshreveable/log15"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -17,6 +18,40 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
+	genkeyCmd := &cobra.Command{
+		Use:   "genkey [binary]",
+		Short: "Generate a keypair for the using the given binary",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			datadir := "./tmpcoinserver"
+			cs := NewCoinserver(map[string]string{
+				"datadir":     datadir,
+				"connect":     "0",
+				"rpcport":     "21000",
+				"rpcuser":     "admin1",
+				"rpcpassword": "123",
+			}, "", args[0])
+			defer func() {
+				cs.Stop()
+				os.RemoveAll(datadir)
+			}()
+
+			err := cs.Run()
+			if err != nil {
+				log.Crit("Failed to start coinserver", "err", err)
+				os.Exit(1)
+			}
+			cs.WaitUntilUp()
+			pub, priv, err := cs.GenerateKeypair()
+			if err != nil {
+				log.Crit("Failed to generate", "err", err)
+				os.Exit(1)
+			}
+			fmt.Println("Pubkey: ", pub)
+			fmt.Println("Privkey: ", priv)
+		}}
+	RootCmd.AddCommand(genkeyCmd)
+
 	runCmd := &cobra.Command{
 		Use:   "run [name]",
 		Short: "Run the coinbuddy and coinserver",
