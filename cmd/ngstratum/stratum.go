@@ -343,6 +343,7 @@ type CoinserverWatcher struct {
 	blockCast   broadcast.Broadcaster
 	wg          sync.WaitGroup
 	shutdown    chan interface{}
+	log         log.Logger
 }
 
 func (cw *CoinserverWatcher) Stop() {
@@ -353,9 +354,11 @@ func (cw *CoinserverWatcher) Stop() {
 	}
 	close(cw.shutdown)
 	cw.wg.Wait()
+	cw.log.Info("CoinserverWatcher shutdown complete")
 }
 
 func (cw *CoinserverWatcher) Start() {
+	cw.log = log.New("coin", cw.tmplKey.Currency, "id", cw.id)
 	cw.wg = sync.WaitGroup{}
 	cw.shutdown = make(chan interface{})
 	go cw.RunTemplateBroadcaster()
@@ -365,7 +368,6 @@ func (cw *CoinserverWatcher) Start() {
 func (cw *CoinserverWatcher) RunBlockCastListener() {
 	cw.wg.Add(1)
 	defer cw.wg.Done()
-	logger := log.New("coin", cw.tmplKey.Currency, "id", cw.id)
 
 	connCfg := &rpcclient.ConnConfig{
 		Host:         cw.endpoint[7:] + "rpc",
@@ -382,7 +384,7 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 	listener := make(chan interface{})
 	cw.blockCast.Register(listener)
 	defer func() {
-		logger.Debug("Closing template listener channel")
+		cw.log.Debug("Closing template listener channel")
 		cw.blockCast.Unregister(listener)
 		close(listener)
 	}()
@@ -390,13 +392,13 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 		msg := <-listener
 		newBlock := msg.(*BlockSolve)
 		if err != nil {
-			logger.Error("Invalid type recieved from blockCast", "err", err)
+			cw.log.Error("Invalid type recieved from blockCast", "err", err)
 			continue
 		}
 		hexString := hex.EncodeToString(newBlock.data)
 		encodedBlock, err := json.Marshal(hexString)
 		if err != nil {
-			logger.Error("Failed to json marshal a string", "err", err)
+			cw.log.Error("Failed to json marshal a string", "err", err)
 			continue
 		}
 		params := []json.RawMessage{
@@ -405,9 +407,9 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 		}
 		res, err := client.RawRequest("submitblock", params)
 		if err != nil {
-			logger.Info("Error submitting block", "err", err)
+			cw.log.Info("Error submitting block", "err", err)
 		} else {
-			logger.Info("Submitted block", "result", res, "height", newBlock.height)
+			cw.log.Info("Submitted block", "result", string(res), "height", newBlock.height)
 		}
 	}
 }
