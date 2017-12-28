@@ -192,6 +192,40 @@ func (c *CoinBuddy) RunEventListener() {
 	log.Info("Listening for SSE subscriptions", "endpoint", endpoint)
 }
 
+func (c *CoinBuddy) UpdateBlock() error {
+	params := []json.RawMessage{}
+	rawTemplate, err := c.cs.client.RawRequest("getblocktemplate", params)
+	if err != nil {
+		log.Error("Failed to get block template", "err", err)
+		if jerr, ok := err.(*btcjson.RPCError); ok {
+			log.Info("got rpc error from server", "code", jerr.Code)
+		}
+		return err
+	} else {
+		var template BlockTemplate
+		err := json.Unmarshal(rawTemplate, &template)
+		if err != nil {
+			log.Warn("Malformed template", "tmpl", rawTemplate)
+			return errors.New("Malformed template")
+		}
+		log.Info("Got new block template from client", "height", template.Height)
+
+		rawTemplate = append(rawTemplate[:len(rawTemplate)-1], c.templateExtras...)
+		var transmit bool = false
+		c.lastBlockMtx.Lock()
+		if template.Height > c.lastBlockHeight {
+			c.lastBlockHeight = template.Height
+			c.lastBlock = rawTemplate
+			transmit = true
+		}
+		c.lastBlockMtx.Unlock()
+		if transmit {
+			c.broadcast.Submit(rawTemplate)
+		}
+	}
+	return nil
+}
+
 type BlockTemplate struct {
 	Height uint64
 }
@@ -200,43 +234,10 @@ func (c *CoinBuddy) RunBlockListener() {
 	c.blockListener = &http.Server{
 		Addr: c.config.GetString("BlockListenerBind"),
 	}
-	updateBlock := func() error {
-		params := []json.RawMessage{}
-		rawTemplate, err := c.cs.client.RawRequest("getblocktemplate", params)
-		if err != nil {
-			log.Error("Failed to get block template", "err", err)
-			if jerr, ok := err.(*btcjson.RPCError); ok {
-				log.Info("got rpc error from server", "code", jerr.Code)
-			}
-			return err
-		} else {
-			var template BlockTemplate
-			err := json.Unmarshal(rawTemplate, &template)
-			if err != nil {
-				log.Warn("Malformed template", "tmpl", rawTemplate)
-				return errors.New("Malformed template")
-			}
-			log.Info("Got new block template from client", "height", template.Height)
-
-			rawTemplate = append(rawTemplate[:len(rawTemplate)-1], c.templateExtras...)
-			var transmit bool = false
-			c.lastBlockMtx.Lock()
-			if template.Height > c.lastBlockHeight {
-				c.lastBlockHeight = template.Height
-				c.lastBlock = rawTemplate
-				transmit = true
-			}
-			c.lastBlockMtx.Unlock()
-			if transmit {
-				c.broadcast.Submit(rawTemplate)
-			}
-		}
-		return nil
-	}
 	http.HandleFunc("/notif", func(w http.ResponseWriter, r *http.Request) {
 		bid := r.URL.Query().Get("id")
 		log.Info("Got notif about new block from server", "hash", bid)
-		err := updateBlock()
+		err := c.UpdateBlock()
 		if err != nil {
 			w.WriteHeader(http.StatusExpectationFailed)
 		} else {
@@ -258,7 +259,7 @@ func (c *CoinBuddy) RunBlockListener() {
 			if c.lastBlock != nil {
 				break
 			}
-			updateBlock()
+			c.UpdateBlock()
 			log.Info("Retrying initial block template fetch in 5")
 			time.Sleep(5 * time.Second)
 		}
