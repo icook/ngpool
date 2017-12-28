@@ -509,8 +509,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(
 		switch update.Action {
 		case "removed":
 			if csw, ok := coinserverWatchers[update.ServiceID]; ok {
-				log.Info("Coinserver shutdown", "id", update.ServiceID)
-				csw.Stop()
+				go csw.Stop()
 			}
 		case "updated":
 			log.Debug("Coinserver status update", "id", update.ServiceID, "new_status", update.Status)
@@ -522,7 +521,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(
 				Algo:         labels["algo"],
 				TemplateType: labels["template_type"],
 			}
-			// I'm sure there's a less verbose way to do this, but if we're not
+			// I'm sure there's a less verbose way to do this. If we're not
 			// interested in the templates of this coinserver, ignore the
 			// update and continue
 			found := false
