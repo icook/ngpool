@@ -159,6 +159,12 @@ func (c *CoinBuddy) RunEventListener() {
 			return
 		}
 		ctx.JSON(200, gin.H{"result": res, "error": nil, "id": req.ID})
+		// If we just got a block, make sure we re-run update block in case
+		// push block is failing. This sometimes happens with fast block
+		// submission (regtest), probably a race condition in coinserver code
+		if req.Method == "submitblock" {
+			c.UpdateBlock()
+		}
 	})
 	c.eventListener.GET("/blocks", func(ctx *gin.Context) {
 		listener := make(chan interface{})
