@@ -264,11 +264,11 @@ func (n *StratumServer) listenTemplates() {
 			log.Error("Error generating job", "err", err)
 			continue
 		}
-		log.Info("New job generated, pushing...")
 		n.lastJobMtx.Lock()
 		n.lastJob = job
 		n.lastJobMtx.Unlock()
 		n.jobCast.Submit(job)
+		log.Info("New job pushed", "lastJobFlush", lastJobFlush)
 	}
 }
 
@@ -513,6 +513,7 @@ func (n *StratumServer) HandleCoinserverWatcherUpdates(
 		switch update.Action {
 		case "removed":
 			if csw, ok := coinserverWatchers[update.ServiceID]; ok {
+				log.Info("Coinserver shutdown", "id", update.ServiceID)
 				go csw.Stop()
 			}
 		case "updated":

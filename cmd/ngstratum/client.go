@@ -58,7 +58,7 @@ func NewClient(conn net.Conn, jobSubscribe chan chan interface{}, newShare chan 
 }
 
 func (c *StratumClient) Stop() {
-	c.log.Info("Stop")
+	c.log.Info("Client disconnect")
 	err := c.conn.Close()
 	if err != nil {
 		c.log.Warn("Error closing", "err", err)
