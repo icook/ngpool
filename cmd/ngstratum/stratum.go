@@ -389,27 +389,31 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 		close(listener)
 	}()
 	for {
-		msg := <-listener
-		newBlock := msg.(*BlockSolve)
-		if err != nil {
-			cw.log.Error("Invalid type recieved from blockCast", "err", err)
-			continue
-		}
-		hexString := hex.EncodeToString(newBlock.data)
-		encodedBlock, err := json.Marshal(hexString)
-		if err != nil {
-			cw.log.Error("Failed to json marshal a string", "err", err)
-			continue
-		}
-		params := []json.RawMessage{
-			encodedBlock,
-			[]byte{'[', ']'},
-		}
-		res, err := client.RawRequest("submitblock", params)
-		if err != nil {
-			cw.log.Info("Error submitting block", "err", err)
-		} else {
-			cw.log.Info("Submitted block", "result", string(res), "height", newBlock.height)
+		select {
+		case <-cw.shutdown:
+			return
+		case msg := <-listener:
+			newBlock := msg.(*BlockSolve)
+			if err != nil {
+				cw.log.Error("Invalid type recieved from blockCast", "err", err)
+				continue
+			}
+			hexString := hex.EncodeToString(newBlock.data)
+			encodedBlock, err := json.Marshal(hexString)
+			if err != nil {
+				cw.log.Error("Failed to json marshal a string", "err", err)
+				continue
+			}
+			params := []json.RawMessage{
+				encodedBlock,
+				[]byte{'[', ']'},
+			}
+			res, err := client.RawRequest("submitblock", params)
+			if err != nil {
+				cw.log.Info("Error submitting block", "err", err)
+			} else {
+				cw.log.Info("Submitted block", "result", string(res), "height", newBlock.height)
+			}
 		}
 	}
 }
