@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
+	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
 	"io"
@@ -21,15 +22,16 @@ import (
 )
 
 type CoinBuddy struct {
-	config         *viper.Viper
-	cs             *Coinserver
-	blockListener  *http.Server
-	eventListener  *gin.Engine
-	lastBlock      json.RawMessage
-	lastBlockMtx   sync.RWMutex
-	broadcast      broadcast.Broadcaster
-	templateExtras []byte
-	service        *service.Service
+	config          *viper.Viper
+	cs              *Coinserver
+	blockListener   *http.Server
+	eventListener   *gin.Engine
+	lastBlock       json.RawMessage
+	lastBlockHeight uint64
+	lastBlockMtx    sync.RWMutex
+	broadcast       broadcast.Broadcaster
+	templateExtras  []byte
+	service         *service.Service
 }
 
 func NewCoinBuddy() *CoinBuddy {
@@ -160,6 +162,7 @@ func (c *CoinBuddy) RunEventListener() {
 	})
 	c.eventListener.GET("/blocks", func(ctx *gin.Context) {
 		listener := make(chan interface{})
+		log.Debug("Registering new block listener")
 		c.broadcast.Register(listener)
 		defer func() {
 			log.Debug("Closing client channel")
@@ -189,13 +192,17 @@ func (c *CoinBuddy) RunEventListener() {
 	log.Info("Listening for SSE subscriptions", "endpoint", endpoint)
 }
 
+type BlockTemplate struct {
+	Height uint64
+}
+
 func (c *CoinBuddy) RunBlockListener() {
 	c.blockListener = &http.Server{
 		Addr: c.config.GetString("BlockListenerBind"),
 	}
 	updateBlock := func() error {
 		params := []json.RawMessage{}
-		template, err := c.cs.client.RawRequest("getblocktemplate", params)
+		rawTemplate, err := c.cs.client.RawRequest("getblocktemplate", params)
 		if err != nil {
 			log.Error("Failed to get block template", "err", err)
 			if jerr, ok := err.(*btcjson.RPCError); ok {
@@ -203,12 +210,26 @@ func (c *CoinBuddy) RunBlockListener() {
 			}
 			return err
 		} else {
-			log.Info("Got new block template from client")
-			template = append(template[:len(template)-1], c.templateExtras...)
+			var template BlockTemplate
+			err := json.Unmarshal(rawTemplate, &template)
+			if err != nil {
+				log.Warn("Malformed template", "tmpl", rawTemplate)
+				return errors.New("Malformed template")
+			}
+			log.Info("Got new block template from client", "height", template.Height)
+
+			rawTemplate = append(rawTemplate[:len(rawTemplate)-1], c.templateExtras...)
+			var transmit bool = false
 			c.lastBlockMtx.Lock()
-			c.lastBlock = template
+			if template.Height > c.lastBlockHeight {
+				c.lastBlockHeight = template.Height
+				c.lastBlock = rawTemplate
+				transmit = true
+			}
 			c.lastBlockMtx.Unlock()
-			c.broadcast.Submit(template)
+			if transmit {
+				c.broadcast.Submit(rawTemplate)
+			}
 		}
 		return nil
 	}
