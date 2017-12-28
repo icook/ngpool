@@ -153,6 +153,7 @@ func (c *Coinserver) kill(proc *os.Process) error {
 
 func (c *Coinserver) Run() error {
 	log.Debug("Starting coinserver", "bin", c.command.Path, "args", c.command.Args)
+	os.Mkdir(c.Config["datadir"], os.ModePerm)
 	done := make(chan interface{}, 1)
 	buf := make([]byte, 2048)
 	stderr, err := c.command.StderrPipe()
