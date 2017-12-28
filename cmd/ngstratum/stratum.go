@@ -403,12 +403,11 @@ func (cw *CoinserverWatcher) RunBlockCastListener() {
 			encodedBlock,
 			[]byte{'[', ']'},
 		}
-		rawResult, err := client.RawRequest("submitblock", params)
-		res := string(rawResult[1 : len(rawResult)-1])
+		res, err := client.RawRequest("submitblock", params)
 		if err != nil {
 			logger.Info("Error submitting block", "err", err)
 		} else {
-			logger.Info("Submitted block", "resp", res)
+			logger.Info("Submitted block", "result", res, "height", newBlock.height)
 		}
 	}
 }
