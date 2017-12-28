@@ -262,10 +262,10 @@ func (c *CoinBuddy) RunBlockListener() {
 	// Loop and try to get an initial block template every few seconds
 	go func() {
 		for {
+			c.UpdateBlock()
 			if c.lastBlock != nil {
 				break
 			}
-			c.UpdateBlock()
 			log.Info("Retrying initial block template fetch in 5")
 			time.Sleep(5 * time.Second)
 		}
