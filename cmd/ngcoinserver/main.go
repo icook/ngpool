@@ -18,19 +18,28 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
+	var net string
 	genkeyCmd := &cobra.Command{
 		Use:   "genkey [binary]",
 		Short: "Generate a keypair for the using the given binary",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			datadir := "./tmpcoinserver"
-			cs := NewCoinserver(map[string]string{
+			config := map[string]string{
 				"datadir":     datadir,
 				"connect":     "0",
 				"rpcport":     "21000",
 				"rpcuser":     "admin1",
 				"rpcpassword": "123",
-			}, "", args[0])
+			}
+			switch net {
+			case "test":
+				config["testnet"] = "1"
+			case "regtest":
+				config["regtest"] = "1"
+			}
+
+			cs := NewCoinserver(config, "", args[0])
 			defer func() {
 				cs.Stop()
 				os.RemoveAll(datadir)
@@ -50,6 +59,8 @@ func init() {
 			fmt.Println("Pubkey: ", pub)
 			fmt.Println("Privkey: ", priv)
 		}}
+
+	genkeyCmd.Flags().StringVarP(&net, "net", "n", "main", "main,regtest,test")
 	RootCmd.AddCommand(genkeyCmd)
 
 	runCmd := &cobra.Command{
