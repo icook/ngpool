@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
@@ -120,15 +121,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		q.apiSuccess(c, 200, res{})
 		return
 	}
-	type PayoutMap struct {
-		CreditIDs  []int
-		UserID     int
-		AddressObj btcutil.Address `json:"-"`
-		Address    string
-		Amount     int64
-		MinerFee   int64
-	}
-	var maps = map[int]*PayoutMap{}
+	var maps = map[int]*common.PayoutMap{}
 	var totalPayout int64 = 0
 	defaultNet := &chaincfg.MainNetParams
 	for _, credit := range credits {
@@ -145,7 +138,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 					Title: "One or more payout addresses are invalid"})
 				return
 			}
-			pm = &PayoutMap{
+			pm = &common.PayoutMap{
 				UserID:     credit.UserID,
 				Address:    credit.Address,
 				AddressObj: addr,
@@ -163,13 +156,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		"total", totalPayout)
 
 	// Pick our UTXOs for the transaction. For now just pick whatever...
-	type UTXO struct {
-		Hash    string
-		Vout    int
-		Amount  int64
-		Address string
-	}
-	var utxos []UTXO
+	var utxos []common.UTXO
 	err = q.db.Select(&utxos,
 		`SELECT hash, vout, amount, address FROM utxo
 		WHERE currency = $1 AND spendable = true AND spent = false`, currency)
@@ -177,7 +164,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
 	}
-	var selectedUTXO []UTXO
+	var selectedUTXO []common.UTXO
 	var totalPaid int64 = 0
 	inputs := []btcjson.TransactionInput{}
 	for _, utxo := range utxos {

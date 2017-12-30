@@ -4,18 +4,21 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"os"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/levigross/grequests"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"os"
+
+	"github.com/icook/ngpool/pkg/common"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 func sign(config *service.ChainConfig, urlbase string,
@@ -27,22 +30,9 @@ func sign(config *service.ChainConfig, urlbase string,
 	type Payout struct {
 		Errors []interface{}
 		Data   struct {
-			PayoutMaps map[string]struct {
-				CreditIDs []int
-				UserID    int
-				Address   string
-				Amount    int64
-				MinerFee  int64
-
-				AddressObj btcutil.Address
-			} `json:"payout_maps"`
-			TX     string
-			Inputs []struct {
-				Hash    string
-				Vout    uint32
-				Amount  int64
-				Address string
-			}
+			PayoutMaps map[string]common.PayoutMap `json:"payout_maps"`
+			TX         string
+			Inputs     []common.UTXO
 		}
 	}
 	var vals Payout
