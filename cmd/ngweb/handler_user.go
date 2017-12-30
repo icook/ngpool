@@ -78,6 +78,12 @@ func (q *NgWebAPI) postSetPayout(c *gin.Context) {
 	c.Status(200)
 }
 
+func reverseBytes(s []byte) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+}
+
 func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	var currency = c.Param("currency")
 
@@ -179,7 +185,16 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	var totalPaid int64 = 0
 	inputs := []btcjson.TransactionInput{}
 	for _, utxo := range utxos {
+		// This is unintuitive. To make the raw transaction we need our hash
+		// encoded in RPC byte order, so we reverse it. We also reverse the
+		// hash we send to the signer, since it's going to lookup the address
+		// via the prevout hash
+		hexHsh, _ := hex.DecodeString(utxo.Hash)
+		reverseBytes(hexHsh)
+		utxo.Hash = hex.EncodeToString(hexHsh)
+
 		selectedUTXO = append(selectedUTXO, utxo)
+
 		inputs = append(inputs, btcjson.TransactionInput{
 			Txid: utxo.Hash,
 			Vout: uint32(utxo.Vout),
