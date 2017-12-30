@@ -1,7 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
@@ -12,7 +18,8 @@ import (
 	"os"
 )
 
-func sign(config *service.ChainConfig, urlbase string) error {
+func sign(config *service.ChainConfig, urlbase string,
+	addresses map[string]*btcec.PrivateKey) error {
 	resp, err := grequests.Get(urlbase+"/v1/createpayout/"+config.Code, nil)
 	if err != nil {
 		return err
@@ -20,7 +27,7 @@ func sign(config *service.ChainConfig, urlbase string) error {
 	type Payout struct {
 		Errors []interface{}
 		Data   struct {
-			PayoutMaps []struct {
+			PayoutMaps map[string]struct {
 				CreditIDs []int
 				UserID    int
 				Address   string
@@ -28,8 +35,14 @@ func sign(config *service.ChainConfig, urlbase string) error {
 				MinerFee  int64
 
 				AddressObj btcutil.Address
+			} `json:"payout_maps"`
+			TX     string
+			Inputs []struct {
+				Hash    string
+				Vout    uint32
+				Amount  int64
+				Address string
 			}
-			TX string
 		}
 	}
 	var vals Payout
@@ -41,7 +54,58 @@ func sign(config *service.ChainConfig, urlbase string) error {
 		log.Error("Error from server", "errors", vals.Errors)
 		return errors.New("Error from remote")
 	}
-	log.Info("Got raw payout", "data", vals.Data)
+	var payout = vals.Data
+	log.Info("Got pending payout",
+		"outputs", len(payout.PayoutMaps),
+		"tx_size", len(payout.TX))
+
+	redeemTx := wire.NewMsgTx(0)
+	dec, err := hex.DecodeString(payout.TX)
+	if err != nil {
+		return err
+	}
+	redeemTx.Deserialize(bytes.NewReader(dec))
+
+	lookupKey := func(a btcutil.Address) (*btcec.PrivateKey, bool, error) {
+		addr, ok := addresses[a.EncodeAddress()]
+		return addr, ok, nil
+	}
+
+	for i, input := range redeemTx.TxIn {
+		var inputAddress string
+		cmp := input.PreviousOutPoint.Hash.String()
+		for _, inputUTXO := range payout.Inputs {
+			if inputUTXO.Hash == cmp && input.PreviousOutPoint.Index == inputUTXO.Vout {
+				inputAddress = inputUTXO.Address
+				break
+			}
+		}
+		if inputAddress == "" {
+			log.Error("Failed linking input to UTXO", "i", i, "prevout", input.PreviousOutPoint)
+			return errors.New("Failed to find UTXO linking to input")
+		}
+
+		addr, err := btcutil.DecodeAddress(inputAddress, config.Params)
+		if err != nil {
+			return errors.New("Invalid address in UTXO from server")
+		}
+
+		pkScript, err := txscript.PayToAddrScript(addr)
+		if err != nil {
+			return err
+		}
+
+		sigScript, err := txscript.SignTxOutput(config.Params,
+			redeemTx, i, pkScript, txscript.SigHashAll,
+			txscript.KeyClosure(lookupKey), nil, nil)
+
+		redeemTx.TxIn[i].SignatureScript = sigScript
+	}
+
+	// Push back to server
+	out := bytes.Buffer{}
+	redeemTx.Serialize(&out)
+	log.Info("Signed tx", "tx", hex.EncodeToString(out.Bytes()))
 	return nil
 }
 
@@ -60,6 +124,22 @@ func loadCommon(urlbase string) {
 	var vals Resp
 	resp.JSON(&vals)
 	service.SetupCurrencies(vals.Data.Currencies)
+}
+
+func loadAddresses(addrs []string, params *chaincfg.Params) (map[string]*btcec.PrivateKey, error) {
+	var ret = map[string]*btcec.PrivateKey{}
+	for idx, privkey := range addrs {
+		wif, err := btcutil.DecodeWIF(privkey)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid idx %v", idx)
+		}
+		addr, err := btcutil.NewAddressPubKey(wif.PrivKey.PubKey().SerializeCompressed(), params)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid idx %v", idx)
+		}
+		ret[addr.EncodeAddress()] = wif.PrivKey
+	}
+	return ret, nil
 }
 
 var RootCmd = &cobra.Command{
@@ -83,9 +163,21 @@ var RootCmd = &cobra.Command{
 
 		loadCommon(urlbase)
 		for _, curr := range service.CurrencyConfig {
-			err = sign(curr, args[0])
+			logger := log.New("currency", curr.Code)
+			subcfg := config.Sub(curr.Code)
+			if subcfg == nil {
+				logger.Info("Skipping unconfigured")
+				continue
+			}
+			addresses, err := loadAddresses(subcfg.GetStringSlice("keys"), curr.Params)
 			if err != nil {
-				log.Crit("Failed signing", "err", err)
+				logger.Crit("Invalid address", "err", err)
+				os.Exit(1)
+			}
+
+			err = sign(curr, args[0], addresses)
+			if err != nil {
+				logger.Crit("Failed signing", "err", err)
 			}
 		}
 	},
