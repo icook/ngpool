@@ -110,13 +110,13 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 				"reqconfirms", config.BlockMatureConfirms)
 		} else if resp.Confirmations == -1 && (height-resp.Height) > config.BlockMatureConfirms {
 			newStatus = "orphan"
-			q.log.Info("Block orphan",
+			q.log.Warn("Block orphan",
 				"block", block,
 				"chainHeight", height,
 				"blockHeight", resp.Height,
 				"reqorphanconfirms", config.BlockMatureConfirms)
 		} else {
-			q.log.Info("Block not mature",
+			q.log.Debug("Block not mature",
 				"block", block,
 				"confirms", resp.Confirmations,
 				"remain", config.BlockMatureConfirms-resp.Confirmations,
@@ -151,6 +151,12 @@ func (q *NgWebAPI) ConfirmBlocks() error {
 				continue
 			}
 		}
+	}
+
+	q.log.Info("Running generate credits to process newly matured blocks")
+	err = q.GenerateCredits()
+	if err != nil {
+		q.log.Error("GenerateCredits failed", "err", err)
 	}
 	return nil
 }
