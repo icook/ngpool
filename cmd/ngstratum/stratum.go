@@ -27,13 +27,14 @@ import (
 )
 
 type BlockSolve struct {
-	powhash      *big.Int
-	target       *big.Int
-	coinbaseHash []byte
-	height       int64
-	subsidy      int64
-	powalgo      string
-	data         []byte
+	powhash        *big.Int
+	target         *big.Int
+	coinbaseHash   []byte
+	height         int64
+	subsidy        int64
+	powalgo        string
+	data           []byte
+	subsidyAddress string
 }
 
 func (b *BlockSolve) getBlockHash() string {
@@ -190,12 +191,13 @@ func (n *StratumServer) ListenShares() {
 		// Insert a block and UTXO (the coinbase) for each solve
 		for currencyCode, block := range share.blocks {
 			_, err := n.db.Exec(
-				`INSERT INTO utxo (hash, vout, amount, currency)
-				VALUES ($1, $2, $3, $4)`,
+				`INSERT INTO utxo (hash, vout, amount, currency, address)
+				VALUES ($1, $2, $3, $4, $5)`,
 				hex.EncodeToString(block.coinbaseHash),
 				0, // Coinbase UTXO is always first and only UTXO
 				block.subsidy,
-				currencyCode)
+				currencyCode,
+				block.subsidyAddress)
 			if err != nil {
 				log.Error("Failed to save block UTXO", "err", err)
 			}

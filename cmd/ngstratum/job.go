@@ -197,13 +197,14 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	var currencies = []string{j.currencyConfig.Code}
 	if bigHsh.Cmp(j.target) <= 0 {
 		ret[j.currencyConfig.Code] = &BlockSolve{
-			data:         j.GetBlock(header, coinbase.Bytes()),
-			coinbaseHash: coinbaseHash,
-			powalgo:      j.currencyConfig.Algo.Name,
-			subsidy:      j.subsidy,
-			height:       j.height,
-			powhash:      bigHsh,
-			target:       j.target,
+			data:           j.GetBlock(header, coinbase.Bytes()),
+			coinbaseHash:   coinbaseHash,
+			subsidyAddress: (*j.currencyConfig.BlockSubsidyAddress).String(),
+			powalgo:        j.currencyConfig.Algo.Name,
+			subsidy:        j.subsidy,
+			height:         j.height,
+			powhash:        bigHsh,
+			target:         j.target,
 		}
 	}
 
@@ -211,12 +212,13 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 		currencies = append(currencies, mj.currencyConfig.Code)
 		if bigHsh.Cmp(mj.target) <= 0 {
 			ret[mj.currencyConfig.Code] = &BlockSolve{
-				data:         mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
-				subsidy:      mj.subsidy,
-				height:       mj.height,
-				coinbaseHash: mj.coinbaseHash,
-				powhash:      bigHsh,
-				target:       mj.target,
+				data:           mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
+				subsidy:        mj.subsidy,
+				height:         mj.height,
+				coinbaseHash:   mj.coinbaseHash,
+				subsidyAddress: (*mj.currencyConfig.BlockSubsidyAddress).String(),
+				powhash:        bigHsh,
+				target:         mj.target,
 			}
 		}
 	}

@@ -162,13 +162,14 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 
 	// Pick our UTXOs for the transaction. For now just pick whatever...
 	type UTXO struct {
-		Hash   string
-		Vout   int
-		Amount int64
+		Hash    string
+		Vout    int
+		Amount  int64
+		Address string
 	}
 	var utxos []UTXO
 	err = q.db.Select(&utxos,
-		`SELECT hash, vout, amount FROM utxo
+		`SELECT hash, vout, amount, address FROM utxo
 		WHERE currency = $1 AND spendable = true AND spent = false`, currency)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
@@ -180,7 +181,9 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	for _, utxo := range utxos {
 		selectedUTXO = append(selectedUTXO, utxo)
 		inputs = append(inputs, btcjson.TransactionInput{
-			Txid: utxo.Hash, Vout: uint32(utxo.Vout)})
+			Txid: utxo.Hash,
+			Vout: uint32(utxo.Vout),
+		})
 		totalPaid += utxo.Amount
 		if totalPaid >= totalPayout {
 			break
@@ -266,5 +269,9 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		return
 	}
 
-	q.apiSuccess(c, 200, res{"payout_maps": maps, "tx": hex.EncodeToString(txWriter.Bytes())})
+	q.apiSuccess(c, 200, res{
+		"payout_maps": maps,
+		"tx":          hex.EncodeToString(txWriter.Bytes()),
+		"inputs":      selectedUTXO,
+	})
 }

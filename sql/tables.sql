@@ -19,6 +19,7 @@ CREATE TABLE share
 CREATE TABLE utxo
 (
     currency varchar NOT NULL,
+    address varchar NOT NULL,
     hash varchar NOT NULL,
     vout integer NOT NULL,
     amount bigint NOT NULL,
