@@ -10,9 +10,11 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/icook/ngpool/pkg/service"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
+
+	"github.com/icook/ngpool/pkg/common"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 type Job struct {
@@ -103,12 +105,12 @@ MerkleLoop:
 		mmCoinbase.Write([]byte{0xfa, 0xbe, 'm', 'm'})
 		if len(job.auxChains) > 1 {
 			merkleRoot := merkleRoot(merkleBase)
-			reverseBytes(merkleRoot)
+			common.ReverseBytes(merkleRoot)
 			mmCoinbase.Write(merkleRoot)
 		} else {
 			mj := job.auxChains[0]
 			merkleRoot := mj.headerHash.CloneBytes()
-			reverseBytes(merkleRoot)
+			common.ReverseBytes(merkleRoot)
 			mmCoinbase.Write(merkleRoot)
 		}
 		// Merkle size
@@ -264,13 +266,13 @@ func NewMainChainJob(tmpl *BlockTemplate, config *service.ChainConfig) (*MainCha
 	if err != nil {
 		return nil, errors.Wrap(err, "Invalid PreviousBlockhash")
 	}
-	reverseBytes(encodedPrevBlockHash)
+	common.ReverseBytes(encodedPrevBlockHash)
 
 	encodedBits, err := hex.DecodeString(tmpl.Bits)
 	if err != nil {
 		return nil, errors.Wrap(err, "Invalid bits")
 	}
-	reverseBytes(encodedBits)
+	common.ReverseBytes(encodedBits)
 
 	transactions := [][]byte{}
 	for _, tx := range tmpl.Transactions {
@@ -371,7 +373,7 @@ func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxC
 	if err != nil {
 		return nil, errors.Wrap(err, "Invalid PreviousBlockhash")
 	}
-	reverseBytes(encodedPrevBlockHash)
+	common.ReverseBytes(encodedPrevBlockHash)
 	blkHeader.Write(encodedPrevBlockHash)
 
 	// Hash the coinbase, then create a merkleRoot for the header from the
@@ -394,7 +396,7 @@ func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxC
 	if err != nil {
 		return nil, errors.Wrap(err, "Invalid bits")
 	}
-	reverseBytes(encodedBits)
+	common.ReverseBytes(encodedBits)
 	blkHeader.Write(encodedBits)
 	blkHeader.Write([]byte{0, 0, 0, 0})
 

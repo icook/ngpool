@@ -7,8 +7,10 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/gin-gonic/gin"
-	"github.com/icook/ngpool/pkg/service"
 	"github.com/pkg/errors"
+
+	"github.com/icook/ngpool/pkg/common"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 type PayoutAddress struct {
@@ -76,12 +78,6 @@ func (q *NgWebAPI) postSetPayout(c *gin.Context) {
 		return
 	}
 	c.Status(200)
-}
-
-func reverseBytes(s []byte) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
 }
 
 func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
@@ -190,7 +186,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		// hash we send to the signer, since it's going to lookup the address
 		// via the prevout hash
 		hexHsh, _ := hex.DecodeString(utxo.Hash)
-		reverseBytes(hexHsh)
+		common.ReverseBytes(hexHsh)
 		utxo.Hash = hex.EncodeToString(hexHsh)
 
 		selectedUTXO = append(selectedUTXO, utxo)

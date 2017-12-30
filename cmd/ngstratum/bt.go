@@ -10,10 +10,12 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/pkg/errors"
 	"github.com/seehuhn/sha256d"
+
+	"github.com/icook/ngpool/pkg/common"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 type GBTTransaction struct {
@@ -81,7 +83,7 @@ func (b *BlockTemplate) merkleBranch() [][]byte {
 		if err != nil {
 			log.Warn("Invalid txid from gbt", "err", err)
 		}
-		reverseBytes(txID)
+		common.ReverseBytes(txID)
 		hashes = append(hashes, txID)
 	}
 	for {
@@ -167,7 +169,7 @@ func (b *BlockTemplate) merkleRoot(coinbaseHash []byte) []byte {
 		if err != nil {
 			log.Warn("Invalid txid from gbt", "err", err)
 		}
-		reverseBytes(txID)
+		common.ReverseBytes(txID)
 		hashes = append(hashes, txID)
 	}
 	return merkleRoot(hashes)
@@ -239,10 +241,4 @@ func merkleRoot(hashes [][]byte) []byte {
 		hashes = newHashes
 	}
 	return hashes[0]
-}
-
-func reverseBytes(s []byte) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
 }
