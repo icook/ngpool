@@ -35,6 +35,11 @@ type ChainConfigDecoder struct {
 	FlushAux bool
 	// This is the transaction fee to use for payouts. Given in satoshis / byte
 	PayoutTransactionFee int
+	// This is a lower bound on the fee used for transactions, to ensure
+	// network minimums are met. Search for "DEFAULT_MIN_RELAY_TX_FEE" in
+	// source code to get the node default. This is in satoshis / KILObyte (so
+	// 1000x the PayoutTransactionFee)
+	MinimumRelayFee int
 
 	// Parsed - These options get parsed in SetupCurrencies
 
@@ -71,6 +76,7 @@ type ChainConfig struct {
 	BlockMatureConfirms  int64
 	FlushAux             bool
 	PayoutTransactionFee int
+	MinimumRelayFee      int
 
 	Algo                *Algo
 	Params              *chaincfg.Params `json:"-"`
@@ -163,6 +169,7 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 			Code:                 config.Code,
 			BlockMatureConfirms:  config.BlockMatureConfirms,
 			PayoutTransactionFee: config.PayoutTransactionFee,
+			MinimumRelayFee:      config.MinimumRelayFee,
 
 			Params:              params,
 			BlockSubsidyAddress: &bsa,
