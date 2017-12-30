@@ -239,12 +239,13 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	}
 
 	// Compute the fee, then extract it from each of the amounts...
-	fee := tx.SerializeSize() * config.PayoutTransactionFee
+	size := tx.SerializeSize() + int(float32(106.5)*float32(len(selectedUTXO)))
+	fee := size * config.PayoutTransactionFee
 	q.log.Info("Generated tx for fee calc", "tx", tx)
 	feePerPayee := fee / len(maps)
 	q.log.Info("Calculating fee for payout",
 		"fee per byte", config.PayoutTransactionFee,
-		"tx size", tx.SerializeSize(),
+		"tx size", size,
 		"total fee", fee,
 		"fee per payee", feePerPayee)
 
