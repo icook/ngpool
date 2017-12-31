@@ -24,17 +24,62 @@ type PayoutAddress struct {
 	Currency string `validate:"required" json:"currency"`
 }
 
+type Payout struct {
+	Address  string `json:"address"`
+	Amount   int64  `json:"amount"`
+	MinerFee int64  `db:"fee" json:"miner_fee"`
+
+	TXID      string    `db:"hash" json:"txid"`
+	Sent      time.Time `json:"sent"`
+	Confirmed bool      `json:"confirmed"`
+}
+
+func (q *NgWebAPI) getPayout(c *gin.Context) {
+	userID := c.GetInt("userID")
+	var txhash = c.Param("hash")
+	var payout Payout
+	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
+	base := psql.Select("p.address, p.amount, p.fee, pt.sent, pt.hash, pt.confirmed").
+		From("payout as p").
+		Join("payout_transaction as pt ON pt.hash = p.payout_transaction").
+		OrderBy("pt.sent DESC").
+		Where(sq.Eq{"p.user_id": userID, "p.payout_transaction": txhash}).
+		Limit(uint64(pageSize)).Offset(uint64(page * pageSize))
+	qstring, args, err := base.ToSql()
+	if err == sql.ErrNoRows {
+		q.apiError(c, 404, APIError{
+			Code: "invalid_hash", Title: "Payout hash not found"})
+		return
+	}
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	err = q.db.Get(&payout, qstring, args...)
+	if err != nil && err != sql.ErrNoRows {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	var credits = []Credit{}
+	err = q.db.Select(&credits,
+		`SELECT c.amount, c.sharechain, c.blockhash, b.mined_at
+		FROM credit as c
+		JOIN block as b ON c.blockhash = b.hash
+		WHERE payout_transaction = $1
+		ORDER BY b.mined_at`, txhash)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	q.apiSuccess(c, 200, res{"payout": payout, "credits": credits})
+}
+
 func (q *NgWebAPI) getPayouts(c *gin.Context) {
 	userID := c.GetInt("userID")
-	type Payout struct {
-		Address  string `json:"address"`
-		Amount   int64  `json:"amount"`
-		MinerFee int64  `db:"fee" json:"miner_fee"`
-
-		TXID      string    `db:"hash" json:"txid"`
-		Sent      time.Time `json:"sent"`
-		Confirmed bool      `json:"confirmed"`
-	}
 	var payouts = []*Payout{}
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
@@ -46,7 +91,6 @@ func (q *NgWebAPI) getPayouts(c *gin.Context) {
 		Where(sq.Eq{"p.user_id": userID}).
 		Limit(uint64(pageSize)).Offset(uint64(page * pageSize))
 	qstring, args, err := base.ToSql()
-	q.log.Info("t", "sql", qstring)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return

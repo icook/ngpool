@@ -53,7 +53,7 @@ type ShareChainPayout struct {
 	Data           map[string]interface{}
 }
 
-type Credit struct {
+type CreditMap struct {
 	// Loaded from SQL GROUP BY
 	Difficulty float64
 	Amount     int64
@@ -127,7 +127,7 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 		sc.SubsidyFee = int64(sc.config.Fee * float64(sc.Subsidy))
 		sc.SubsidyPayable = sc.Subsidy - sc.SubsidyFee
 		fmt.Printf("%+v\n", sc)
-		var credits []*Credit
+		var credits []*CreditMap
 		switch sc.config.PayoutMethod {
 		case "pplns":
 			credits, err = q.payoutPPLNS(sc, block)
@@ -186,7 +186,7 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 	return nil
 }
 
-func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Credit, error) {
+func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*CreditMap, error) {
 	sharesToFind, acc := block.algoConfig.Diff1SharesForTarget(block.Target)
 	// Static last N of 2 for now TODO: Make this configurable
 	var n float64 = 2
@@ -209,10 +209,10 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	}
 
 	q.log.Info("Computing credits for users")
-	var credits []*Credit
+	var credits []*CreditMap
 	for userID, shares := range userShares {
 		fract := shares / total
-		c := &Credit{
+		c := &CreditMap{
 			UserID:     userID,
 			Difficulty: shares,
 			Amount:     int64(float64(sc.SubsidyPayable) * fract),

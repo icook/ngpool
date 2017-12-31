@@ -25,6 +25,15 @@ type Block struct {
 	Difficulty float64 `json:"difficulty"`
 }
 
+type Credit struct {
+	Blockhash  string    `json:"blockhash,omitempty"`
+	Username   string    `json:"username,omitempty"`
+	UserID     int       `json:"user_id,omitempty" db:"user_id"`
+	Amount     int64     `json:"amount"`
+	ShareChain string    `json:"sharechain"`
+	MinedAt    time.Time `db:"mined_at" json:"mined_at"`
+}
+
 func (q *NgWebAPI) getBlocks(c *gin.Context) {
 	var blocks = []*Block{}
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
@@ -86,12 +95,6 @@ func (q *NgWebAPI) getBlock(c *gin.Context) {
 		return
 	}
 
-	type Credit struct {
-		Username   string `json:"username"`
-		UserID     int    `json:"user_id" db:"user_id"`
-		Amount     int64  `json:"amount"`
-		ShareChain string `json:"sharechain"`
-	}
 	var credits = []Credit{}
 	err = q.db.Select(&credits,
 		`SELECT users.username, credit.user_id, credit.amount, credit.sharechain

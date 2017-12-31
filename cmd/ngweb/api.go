@@ -114,6 +114,7 @@ func (q *NgWebAPI) SetupGin() {
 		api.POST("setpayout", q.postSetPayout)
 
 		api.GET("payouts", q.getPayouts)
+		api.GET("payout/:hash", q.getPayout)
 		api.GET("me", q.getMe)
 	}
 
