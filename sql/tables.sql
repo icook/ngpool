@@ -57,7 +57,7 @@ CREATE TABLE users
     id SERIAL NOT NULL,
     username varchar,
     password varchar,
-    email varchar NOT NULL,
+    email varchar,
     verified_email boolean NOT NULL DEFAULT false,
     tfa_code varchar,
     tfa_enabled boolean NOT NULL DEFAULT false,

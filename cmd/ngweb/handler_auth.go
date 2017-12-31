@@ -175,8 +175,8 @@ func (q *NgWebAPI) createToken(id int, realms []string) (string, error) {
 
 func (q *NgWebAPI) postRegister(c *gin.Context) {
 	type RegisterReq struct {
-		Username string `validate:"required,lt=32"`
-		Email    string `validate:"required,email"`
+		Username string `validate:"required,alphanum,lt=32"`
+		Email    string `validate:"omitempty,email"`
 		Password string `validate:"required,gt=8,lt=128"`
 	}
 	var req RegisterReq
