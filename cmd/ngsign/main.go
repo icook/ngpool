@@ -9,7 +9,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	log "github.com/inconshreveable/log15"
 	"github.com/levigross/grequests"
@@ -30,9 +29,9 @@ func sign(config *service.ChainConfig, urlbase string,
 	type Payout struct {
 		Errors []interface{}
 		Data   struct {
-			PayoutMaps map[string]common.PayoutMap `json:"payout_maps"`
 			TX         string
 			Inputs     []common.UTXO
+			PayoutMeta common.PayoutMeta `json:"payout_meta"`
 		}
 	}
 	var vals Payout
@@ -44,17 +43,19 @@ func sign(config *service.ChainConfig, urlbase string,
 		log.Error("Error from server", "errors", vals.Errors)
 		return errors.New("Error from remote")
 	}
+	if vals.Data.TX == "" {
+		log.Info("No transaction to process at this time", "curr", config.Code)
+		return nil
+	}
 	var payout = vals.Data
 	log.Info("Got pending payout",
-		"outputs", len(payout.PayoutMaps),
-		"tx_size", len(payout.TX))
+		"outputs", len(payout.PayoutMeta.PayoutMaps),
+		"tx_size_wo_sigs", len(payout.TX))
 
-	redeemTx := wire.NewMsgTx(0)
-	dec, err := hex.DecodeString(payout.TX)
+	redeemTx, err := common.HexStringToTX(payout.TX)
 	if err != nil {
 		return err
 	}
-	redeemTx.Deserialize(bytes.NewReader(dec))
 
 	lookupKey := func(a btcutil.Address) (*btcec.PrivateKey, bool, error) {
 		addr, ok := addresses[a.EncodeAddress()]
@@ -94,8 +95,24 @@ func sign(config *service.ChainConfig, urlbase string,
 
 	// Push back to server
 	out := bytes.Buffer{}
-	redeemTx.Serialize(&out)
-	log.Info("Signed tx", "tx", hex.EncodeToString(out.Bytes()))
+	redeemTx.SerializeNoWitness(&out)
+	log.Info("Signed tx", "tx_size", out.Len())
+
+	resp, err = grequests.Post(urlbase+"/v1/payout",
+		&grequests.RequestOptions{
+			JSON: map[string]interface{}{
+				"currency":    config.Code,
+				"payout_meta": payout.PayoutMeta,
+				"tx":          hex.EncodeToString(out.Bytes()),
+			},
+		})
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 200 {
+		log.Error("Payout submission failed", "ret", resp.String())
+		return errors.New("Got non-200 from submission")
+	}
 	return nil
 }
 

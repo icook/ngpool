@@ -1,10 +1,20 @@
 package common
 
 import (
+	"bytes"
+	"encoding/hex"
+
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 )
 
 // A type we use to pass payout transaction metadata between ngweb and ngsigner
+type PayoutMeta struct {
+	ChangeAddress string
+	PayoutMaps    map[int]*PayoutMap `json:"payout_maps"`
+}
+
+// Contains information the
 type PayoutMap struct {
 	CreditIDs []int
 	UserID    int
@@ -22,6 +32,20 @@ type UTXO struct {
 	Vout    uint32
 	Amount  int64
 	Address string
+}
+
+func HexStringToTX(tx string) (*wire.MsgTx, error) {
+	payoutTx := wire.NewMsgTx(0)
+	dec, err := hex.DecodeString(tx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = payoutTx.DeserializeNoWitness(bytes.NewReader(dec))
+	if err != nil {
+		return nil, err
+	}
+	return payoutTx, nil
 }
 
 func ReverseBytes(s []byte) {
