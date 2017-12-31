@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS block CASCADE;
 DROP TABLE IF EXISTS payout_address CASCADE;
 DROP TABLE IF EXISTS credit CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS payout CASCADE;
 DROP TYPE IF EXISTS block_status CASCADE;
 
 CREATE TABLE share
@@ -68,11 +69,26 @@ CREATE TABLE users
 CREATE TABLE payout_transaction
 (
     hash varchar NOT NULL,
+    currency varchar,
+    sent timestamp,
     signed_tx bytea NOT NULL,
-    confirmed boolean NOT NULL,
-    change_utxo varchar NOT NULL,
-    CONSTRAINT change_fk FOREIGN KEY (change_utxo)
-        REFERENCES utxo (hash) MATCH SIMPLE
+    confirmed boolean NOT NULL DEFAULT false,
+    CONSTRAINT payout_transaction_pkey PRIMARY KEY (hash)
+);
+
+CREATE TABLE payout
+(
+    user_id integer NOT NULL,
+    amount bigint NOT NULL,
+    payout_transaction varchar NOT NULL,
+    fee integer NOT NULL,
+    address varchar NOT NULL,
+    CONSTRAINT payout_transaction_fkey FOREIGN KEY (payout_transaction)
+        REFERENCES payout_transaction (hash) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION,
+    CONSTRAINT user_id_fk FOREIGN KEY (user_id)
+        REFERENCES users (id) MATCH SIMPLE
         ON UPDATE NO ACTION
         ON DELETE NO ACTION
 );
@@ -97,6 +113,11 @@ CREATE TABLE credit
     currency varchar NOT NULL,
     blockhash varchar NOT NULL,
     sharechain varchar NOT NULL,
+    payout_transaction varchar,
+    CONSTRAINT payout_transaction_fkey FOREIGN KEY (payout_transaction)
+        REFERENCES payout_transaction (hash) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION,
     CONSTRAINT unique_credit UNIQUE (user_id, blockhash),
     CONSTRAINT blockhash_fk FOREIGN KEY (blockhash)
         REFERENCES block (hash) MATCH SIMPLE

@@ -104,6 +104,7 @@ func (q *NgWebAPI) SetupGin() {
 	r.GET("/v1/common", q.getCommon)
 	r.GET("/v1/coinservers", q.getCoinservers)
 	r.GET("/v1/createpayout/:currency", q.getCreatePayout)
+	r.POST("/v1/payout", q.postPayout)
 
 	api := r.Group("/v1/user/")
 	api.Use(q.authMiddleware)

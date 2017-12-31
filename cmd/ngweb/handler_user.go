@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -58,7 +61,6 @@ func (q *NgWebAPI) postSetPayout(c *gin.Context) {
 		q.apiError(c, 400, APIError{
 			Code:  "invalid_currency",
 			Title: "No currency with that code"})
-
 		return
 	}
 	_, err := btcutil.DecodeAddress(req.Address, config.Params)
@@ -112,7 +114,8 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		`SELECT credit.id, credit.user_id, credit.amount, payout_address.address
 		FROM credit LEFT JOIN payout_address ON
 		credit.user_id = payout_address.user_id AND payout_address.currency = $1
-		WHERE credit.currency = $2 AND payout_address.address IS NOT NULL`, currency, currency)
+		WHERE credit.currency = $2 AND payout_address.address IS NOT NULL
+		AND credit.payout_transaction IS NULL`, currency, currency)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
@@ -260,7 +263,7 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	}
 
 	txWriter := bytes.Buffer{}
-	err = tx.Serialize(&txWriter)
+	err = tx.SerializeNoWitness(&txWriter)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), APIError{
 			Code:  "tx_serialize_err",
@@ -269,8 +272,156 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	}
 
 	q.apiSuccess(c, 200, res{
-		"payout_maps": maps,
-		"tx":          hex.EncodeToString(txWriter.Bytes()),
-		"inputs":      selectedUTXO,
+		"payout_meta": common.PayoutMeta{
+			PayoutMaps:    maps,
+			ChangeAddress: (*config.BlockSubsidyAddress).EncodeAddress(),
+		},
+		"tx":     hex.EncodeToString(txWriter.Bytes()),
+		"inputs": selectedUTXO,
 	})
+}
+
+func (q *NgWebAPI) postPayout(c *gin.Context) {
+	type Payout struct {
+		PayoutMeta common.PayoutMeta `json:"payout_meta"`
+		TX         string
+		Currency   string
+	}
+	var req Payout
+	if !q.BindValid(c, &req) {
+		return
+	}
+
+	// TODO: Extract this into common function like BindValid
+	config, ok := service.CurrencyConfig[req.Currency]
+	if !ok {
+		q.apiError(c, 400, APIError{
+			Code:  "invalid_currency",
+			Title: "No currency with that code"})
+		return
+	}
+
+	payoutTx, err := common.HexStringToTX(req.TX)
+	if err != nil {
+		q.apiException(c, 500, err, APIError{
+			Code:  "invalid_tx",
+			Title: "TX is not valid"})
+		return
+	}
+
+	// Simple sanity check. +1 is for the change address, which isn't
+	// represented by a payoutmap
+	if len(payoutTx.TxOut) != len(req.PayoutMeta.PayoutMaps)+1 {
+		q.apiException(c, 500, err, APIError{
+			Code:  "output_mismatch",
+			Title: "SignedTX outputs dont match payout maps"})
+		return
+	}
+	payoutTxHash := payoutTx.TxHash().String()
+
+	// Insert PayoutTransaction, UTXO (change), and Payout entries for every user
+	tx, err := q.db.Begin()
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	// Insert all change UTXOs. Should always be just 1, unless a user is being
+	// paid out to the BlockSubsidyAddress
+	var inserted = false
+	for idx, out := range payoutTx.TxOut {
+		_, addrs, count, err := txscript.ExtractPkScriptAddrs(out.PkScript, config.Params)
+		if err != nil || count != 1 {
+			tx.Rollback()
+			q.apiException(c, 500, err, APIError{
+				Code:  "invalid_output",
+				Title: "An output had unexpected script"})
+			return
+		}
+		address := addrs[0].EncodeAddress()
+		if address != req.PayoutMeta.ChangeAddress {
+			// Skip this output, it's for a customer, not a change UTXO
+			continue
+		}
+
+		inserted = true
+		_, err = tx.Exec(
+			`INSERT INTO utxo (hash, vout, amount, currency, address)
+			VALUES ($1, $2, $3, $4, $5)`,
+			payoutTxHash,
+			idx,
+			out.Value,
+			config.Code,
+			address)
+		if err != nil {
+			q.apiException(c, 500, errors.WithStack(err), SQLError)
+			return
+		}
+	}
+	// We should always have a change output, so abort if this sanity check
+	// doesn't pass
+	if inserted == false {
+		tx.Rollback()
+		q.apiException(c, 500, errors.WithStack(err), APIError{
+			Code:  "no_change",
+			Title: "Transaction had no change address"})
+		return
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO payout_transaction
+		(hash, signed_tx, currency) VALUES ($1, decode($2, 'hex'), $3)`,
+		payoutTxHash, req.TX, config.Code)
+	if err != nil {
+		tx.Rollback()
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	for _, pm := range req.PayoutMeta.PayoutMaps {
+		_, err = tx.Exec(
+			`INSERT INTO payout
+			(user_id, amount, payout_transaction, fee, address)
+			VALUES ($1, $2, $3, $4, $5)`,
+			pm.UserID, pm.Amount, payoutTxHash, pm.MinerFee, pm.Address)
+		if err != nil {
+			tx.Rollback()
+			q.apiException(c, 500, errors.WithStack(err), SQLError)
+			return
+		}
+
+		psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+		qstring, args, err := psql.Update("credit").
+			Set("payout_transaction", payoutTxHash).
+			Where(sq.Eq{"id": pm.CreditIDs}).ToSql()
+		if err != nil {
+			tx.Rollback()
+			q.apiException(c, 500, errors.WithStack(err), SQLError)
+			return
+		}
+		_, err = tx.Exec(qstring, args...)
+		if err != nil {
+			tx.Rollback()
+			q.apiException(c, 500, errors.WithStack(err), SQLError)
+			return
+		}
+	}
+
+	// We're commiting everything to the database before sending to ensure
+	// against a double payout scenario. ngsigner will never try to payout
+	// credits with populated payout_transaction attributes, so we make sure to
+	// populate them (and commit them successfully) before sending the money to
+	// avoid a double spend
+	err = tx.Commit()
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	c.Status(200)
+
+	err = q.sendPayoutTransactions()
+	if err != nil {
+		q.log.Error("Failed to send txs after postPayout", "err", err)
+	}
 }
