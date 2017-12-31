@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/btcsuite/btcd/btcjson"
@@ -420,7 +419,7 @@ func (q *NgWebAPI) postPayout(c *gin.Context) {
 
 	c.Status(200)
 
-	err = q.sendPayoutTransactions()
+	err = q.updatePayoutTransactions()
 	if err != nil {
 		q.log.Error("Failed to send txs after postPayout", "err", err)
 	}
