@@ -39,7 +39,7 @@ func (q *NgWebAPI) getUnpaid(c *gin.Context) {
 	userID := c.GetInt("userID")
 	var credits = []Credit{}
 	err := q.db.Select(&credits,
-		`SELECT c.amount, c.sharechain, c.blockhash, b.mined_at
+		`SELECT c.amount, c.sharechain, c.blockhash, b.mined_at, c.currency
 		FROM credit as c
 		JOIN block as b ON c.blockhash = b.hash
 		WHERE payout_transaction IS NULL AND c.user_id = $1

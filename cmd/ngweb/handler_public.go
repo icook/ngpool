@@ -27,6 +27,7 @@ type Block struct {
 
 type Credit struct {
 	Blockhash  string    `json:"blockhash,omitempty"`
+	Currency   string    `json:"currency,omitempty"`
 	Username   string    `json:"username,omitempty"`
 	UserID     int       `json:"user_id,omitempty" db:"user_id"`
 	Amount     int64     `json:"amount"`
