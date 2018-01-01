@@ -117,7 +117,7 @@ func (q *NgWebAPI) getCommon(c *gin.Context) {
 	})
 }
 
-func (q *NgWebAPI) getCoinservers(c *gin.Context) {
+func (q *NgWebAPI) getServices(c *gin.Context) {
 	// TODO: This structure could be serialized on each update in the listener
 	// to avoid possible funkiness with locks here
 	q.coinserversMtx.RLock()
