@@ -12,6 +12,7 @@ import (
 type PayoutMeta struct {
 	ChangeAddress string
 	PayoutMaps    map[int]*PayoutMap `json:"payout_maps"`
+	Inputs        []UTXO
 }
 
 // Contains information the

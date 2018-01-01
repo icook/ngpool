@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"encoding/hex"
 	"encoding/json"
-	log "github.com/inconshreveable/log15"
-	_ "github.com/spf13/viper/remote"
 	"io"
 	"math/big"
 	"math/rand"
 	"net"
 	"time"
+
+	"github.com/dustin/go-broadcast"
+	log "github.com/inconshreveable/log15"
+	_ "github.com/spf13/viper/remote"
 )
 
 type StratumClient struct {
@@ -22,13 +24,13 @@ type StratumClient struct {
 	subscribed bool
 	diff       float64
 
-	write        chan []byte
-	jobListener  chan interface{}
-	jobSubscribe chan chan interface{}
-	newShare     chan *Share
-	submit       chan *MiningSubmit
-	log          log.Logger
-	conn         net.Conn
+	write       chan []byte
+	jobListener chan interface{}
+	jobCast     broadcast.Broadcaster
+	newShare    chan *Share
+	submit      chan *MiningSubmit
+	log         log.Logger
+	conn        net.Conn
 }
 
 var diff1 = big.Float{}
@@ -41,17 +43,17 @@ func init() {
 	}
 }
 
-func NewClient(conn net.Conn, jobSubscribe chan chan interface{}, newShare chan *Share) *StratumClient {
+func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share) *StratumClient {
 	sc := &StratumClient{
-		subscribed:   false,
-		conn:         conn,
-		id:           randomString(),
-		attrs:        map[string]string{},
-		jobSubscribe: jobSubscribe,
-		jobListener:  make(chan interface{}),
-		submit:       make(chan *MiningSubmit),
-		write:        make(chan []byte, 10),
-		newShare:     newShare,
+		subscribed:  false,
+		conn:        conn,
+		id:          randomString(),
+		attrs:       map[string]string{},
+		jobCast:     jobCast,
+		jobListener: make(chan interface{}),
+		submit:      make(chan *MiningSubmit),
+		write:       make(chan []byte, 10),
+		newShare:    newShare,
 	}
 	sc.log = log.New("clientid", sc.id)
 	return sc
@@ -60,6 +62,7 @@ func NewClient(conn net.Conn, jobSubscribe chan chan interface{}, newShare chan 
 func (c *StratumClient) Stop() {
 	c.log.Info("Client disconnect")
 	err := c.conn.Close()
+	c.jobCast.Unregister(c.jobListener)
 	if err != nil {
 		c.log.Warn("Error closing", "err", err)
 	}
@@ -287,7 +290,8 @@ func (c *StratumClient) readLoop() {
 				return
 			}
 			c.updateDiff()
-			c.jobSubscribe <- c.jobListener
+			c.log.Debug("Subscribing to jobs")
+			c.jobCast.Register(c.jobListener)
 		case "mining.submit":
 			if !c.subscribed {
 				c.sendError(msg.ID, StratumErrorNotSubbed)

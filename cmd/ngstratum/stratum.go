@@ -6,9 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"sync"
+	"time"
+
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/btcd/rpcclient"
-	"github.com/icook/ngpool/pkg/service"
 	log "github.com/inconshreveable/log15"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -18,12 +24,9 @@ import (
 	"github.com/seehuhn/sha256d"
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper/remote"
-	"math/big"
-	"net"
-	"net/http"
-	"os"
-	"sync"
-	"time"
+
+	"github.com/icook/ngpool/pkg/lbroadcast"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 type BlockSolve struct {
@@ -72,7 +75,6 @@ type StratumServer struct {
 	coinserverWatchers map[string]*CoinserverWatcher
 	newShare           chan *Share
 	newTemplate        chan *Template
-	jobSubscribe       chan chan interface{}
 	jobCast            broadcast.Broadcaster
 	service            *service.Service
 
@@ -88,11 +90,10 @@ func NewStratumServer() *StratumServer {
 	ng := &StratumServer{
 		newTemplate:  make(chan *Template),
 		newShare:     make(chan *Share),
-		jobSubscribe: make(chan chan interface{}),
 		blockCast:    make(map[string]broadcast.Broadcaster),
 		blockCastMtx: &sync.Mutex{},
 		lastJobMtx:   &sync.Mutex{},
-		jobCast:      broadcast.NewBroadcaster(10),
+		jobCast:      lbroadcast.NewLastBroadcaster(10),
 	}
 	return ng
 }
@@ -173,7 +174,6 @@ func (n *StratumServer) Start() {
 		go n.Miner()
 	}
 	go n.ListenMiners()
-	go n.ListenSubscribers()
 	go n.ListenShares()
 }
 
@@ -234,19 +234,6 @@ func (n *StratumServer) ListenShares() {
 		if err != nil {
 			log.Error("Failed to save share", "err", err)
 		}
-	}
-}
-
-func (n *StratumServer) ListenSubscribers() {
-	log.Debug("Starting ListenSubscribers")
-	for {
-		listener := <-n.jobSubscribe
-		n.lastJobMtx.Lock()
-		if n.lastJob != nil {
-			listener <- n.lastJob
-		}
-		n.lastJobMtx.Unlock()
-		n.jobCast.Register(listener)
 	}
 }
 
@@ -501,7 +488,7 @@ func (n *StratumServer) ListenMiners() {
 			log.Warn("Failed to accept connection", "err", err)
 			continue
 		}
-		c := NewClient(conn, n.jobSubscribe, n.newShare)
+		c := NewClient(conn, n.jobCast, n.newShare)
 		c.Start()
 	}
 }
