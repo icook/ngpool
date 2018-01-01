@@ -29,9 +29,9 @@ type Payout struct {
 	Amount   int64  `json:"amount"`
 	MinerFee int64  `db:"fee" json:"miner_fee"`
 
-	TXID      string    `db:"hash" json:"txid"`
-	Sent      time.Time `json:"sent"`
-	Confirmed bool      `json:"confirmed"`
+	TXID      string     `db:"hash" json:"txid"`
+	Sent      *time.Time `json:"sent"`
+	Confirmed bool       `json:"confirmed"`
 }
 
 func (q *NgWebAPI) getPayout(c *gin.Context) {
@@ -255,7 +255,10 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		// This is unintuitive. To make the raw transaction we need our hash
 		// encoded in RPC byte order, so we reverse it. We also reverse the
 		// hash we send to the signer, since it's going to lookup the address
-		// via the prevout hash
+		// via the prevout hash.
+		// TODO: Fix this in a more elegant way. This also requires the
+		// swapping back of bytes for the UTXO update step when ngsign pushes
+		// back the signed to (marking UTXO as spent)
 		hexHsh, _ := hex.DecodeString(utxo.Hash)
 		common.ReverseBytes(hexHsh)
 		utxo.Hash = hex.EncodeToString(hexHsh)
@@ -356,9 +359,9 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		"payout_meta": common.PayoutMeta{
 			PayoutMaps:    maps,
 			ChangeAddress: (*config.BlockSubsidyAddress).EncodeAddress(),
+			Inputs:        selectedUTXO,
 		},
-		"tx":     hex.EncodeToString(txWriter.Bytes()),
-		"inputs": selectedUTXO,
+		"tx": hex.EncodeToString(txWriter.Bytes()),
 	})
 }
 
@@ -373,6 +376,8 @@ func (q *NgWebAPI) postPayout(c *gin.Context) {
 		return
 	}
 
+	// TODO: Ensure exclusivity of UTXO update. Right now interleaving will
+	// make a big mess
 	// TODO: Extract this into common function like BindValid
 	config, ok := service.CurrencyConfig[req.Currency]
 	if !ok {
@@ -405,6 +410,28 @@ func (q *NgWebAPI) postPayout(c *gin.Context) {
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
+	}
+
+	for _, input := range req.PayoutMeta.Inputs {
+		hexHsh, _ := hex.DecodeString(input.Hash)
+		common.ReverseBytes(hexHsh)
+		hsh := hex.EncodeToString(hexHsh)
+		res, err := tx.Exec(
+			`UPDATE utxo SET spent = true WHERE hash = $1 AND vout = $2 AND spent = false`,
+			hsh, input.Vout)
+		if err != nil {
+			tx.Rollback()
+			q.apiException(c, 500, errors.WithStack(err), SQLError)
+			return
+		}
+		affect, err := res.RowsAffected()
+		if err == nil && affect == 0 {
+			tx.Rollback()
+			q.apiException(c, 500, err, APIError{
+				Code:  "utxo_spent",
+				Title: "Transaction un-sendable. Interleaving error"})
+			return
+		}
 	}
 
 	// Insert all change UTXOs. Should always be just 1, unless a user is being

@@ -30,7 +30,6 @@ func sign(config *service.ChainConfig, urlbase string,
 		Errors []interface{}
 		Data   struct {
 			TX         string
-			Inputs     []common.UTXO
 			PayoutMeta common.PayoutMeta `json:"payout_meta"`
 		}
 	}
@@ -65,7 +64,7 @@ func sign(config *service.ChainConfig, urlbase string,
 	for i, input := range redeemTx.TxIn {
 		var inputAddress string
 		cmp := input.PreviousOutPoint.Hash.String()
-		for _, inputUTXO := range payout.Inputs {
+		for _, inputUTXO := range payout.PayoutMeta.Inputs {
 			if inputUTXO.Hash == cmp && input.PreviousOutPoint.Index == inputUTXO.Vout {
 				inputAddress = inputUTXO.Address
 				break
