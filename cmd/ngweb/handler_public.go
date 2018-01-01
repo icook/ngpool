@@ -118,9 +118,14 @@ func (q *NgWebAPI) getCommon(c *gin.Context) {
 }
 
 func (q *NgWebAPI) getCoinservers(c *gin.Context) {
+	// TODO: This structure could be serialized on each update in the listener
+	// to avoid possible funkiness with locks here
 	q.coinserversMtx.RLock()
+	q.stratumsMtx.RLock()
 	q.apiSuccess(c, 200, res{
 		"coinservers": q.coinservers,
+		"stratums":    q.stratums,
 	})
+	q.stratumsMtx.RUnlock()
 	q.coinserversMtx.RUnlock()
 }

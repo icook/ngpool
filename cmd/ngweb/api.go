@@ -33,6 +33,9 @@ type NgWebAPI struct {
 
 	coinservers    map[string]*service.ServiceStatus
 	coinserversMtx *sync.RWMutex
+
+	stratums    map[string]*service.ServiceStatus
+	stratumsMtx *sync.RWMutex
 }
 
 func NewNgWebAPI() *NgWebAPI {
@@ -44,6 +47,9 @@ func NewNgWebAPI() *NgWebAPI {
 
 		coinservers:    map[string]*service.ServiceStatus{},
 		coinserversMtx: &sync.RWMutex{},
+
+		stratums:    map[string]*service.ServiceStatus{},
+		stratumsMtx: &sync.RWMutex{},
 	}
 
 	return &ngw
@@ -121,6 +127,30 @@ func (q *NgWebAPI) SetupGin() {
 	}
 
 	q.engine = r
+}
+
+func (q *NgWebAPI) WatchStratum() {
+	updates, err := q.service.ServiceWatcher("stratum")
+	if err != nil {
+		log.Crit("Failed to start coinserver watcher", "err", err)
+		os.Exit(1)
+	}
+	go func() {
+		q.log.Info("Listening for new stratum services")
+		for {
+			update := <-updates
+			q.stratumsMtx.Lock()
+			switch update.Action {
+			case "removed":
+				delete(q.stratums, update.ServiceID)
+			case "updated", "added":
+				q.stratums[update.ServiceID] = update.Status
+			default:
+				q.log.Warn("Unrecognized action from service watcher", "action", update.Action)
+			}
+			q.stratumsMtx.Unlock()
+		}
+	}()
 }
 
 func (q *NgWebAPI) WatchCoinservers() {

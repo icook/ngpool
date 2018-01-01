@@ -26,6 +26,7 @@ func init() {
 			ng.ConnectDB()
 			ng.SetupGin()
 			ng.WatchCoinservers()
+			ng.WatchStratum()
 			ng.engine.Run()
 
 			// Wait until we recieve sigint
