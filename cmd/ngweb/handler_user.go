@@ -28,6 +28,7 @@ type Payout struct {
 	Address  string `json:"address"`
 	Amount   int64  `json:"amount"`
 	MinerFee int64  `db:"fee" json:"miner_fee"`
+	Currency string `json:"currency"`
 
 	TXID      string     `db:"hash" json:"txid"`
 	Sent      *time.Time `json:"sent"`
@@ -41,7 +42,7 @@ func (q *NgWebAPI) getPayout(c *gin.Context) {
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
-	base := psql.Select("p.address, p.amount, p.fee, pt.sent, pt.hash, pt.confirmed").
+	base := psql.Select("p.address, p.amount, p.fee, pt.sent, pt.hash, pt.confirmed, pt.currency").
 		From("payout as p").
 		Join("payout_transaction as pt ON pt.hash = p.payout_transaction").
 		OrderBy("pt.sent DESC").
@@ -84,7 +85,7 @@ func (q *NgWebAPI) getPayouts(c *gin.Context) {
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
-	base := psql.Select("p.address, p.amount, p.fee, pt.sent, pt.hash, pt.confirmed").
+	base := psql.Select("p.address, p.amount, p.fee, pt.sent, pt.hash, pt.confirmed, pt.currency").
 		From("payout as p").
 		Join("payout_transaction as pt ON pt.hash = p.payout_transaction").
 		OrderBy("pt.sent DESC").
