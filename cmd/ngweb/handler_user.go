@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/icook/ngpool/pkg/common"
 	"github.com/icook/ngpool/pkg/service"
@@ -147,6 +148,46 @@ func (q *NgWebAPI) getMe(c *gin.Context) {
 		addrMap[addr.Currency] = addr.Address
 	}
 	q.apiSuccess(c, 200, res{"user": user, "payout_addresses": addrMap})
+}
+
+func (q *NgWebAPI) postChangePassword(c *gin.Context) {
+	var req struct {
+		NewPassword string `json:"new_password"`
+		OldPassword string `json:"old_password"`
+	}
+	if !q.BindValid(c, &req) {
+		return
+	}
+	userID := c.GetInt("userID")
+	var passwordCrypt string
+	err := q.db.QueryRowx("SELECT password FROM users WHERE id = $1", userID).
+		Scan(&passwordCrypt)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	err = bcrypt.CompareHashAndPassword(
+		[]byte(passwordCrypt), []byte(req.OldPassword))
+	if err != nil {
+		q.apiError(c, 403, APIError{
+			Code:  "invalid_auth",
+			Title: "Invalid username or password provided"})
+		return
+	}
+	bcryptPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), 6)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), APIError{
+			Code:  "bcrypt_error",
+			Title: "Unable to hash password for unknown reason"})
+		return
+	}
+	_, err = q.db.Exec(
+		`UPDATE users SET password = $1 WHERE id = $2`, bcryptPassword, userID)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	c.Status(200)
 }
 
 func (q *NgWebAPI) postSetPayout(c *gin.Context) {
