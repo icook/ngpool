@@ -165,19 +165,15 @@ func (q *NgWebAPI) WatchCoinservers() {
 			update := <-updates
 			labels := update.Status.Labels
 			currency := labels["currency"]
+
+			q.currencyRPCMtx.Lock()
+			q.coinserversMtx.Lock()
 			switch update.Action {
 			case "removed":
-				q.currencyRPCMtx.Lock()
 				delete(q.currencyRPC, currency)
-				q.currencyRPCMtx.Unlock()
-
-				q.coinserversMtx.Lock()
 				delete(q.coinservers, update.ServiceID)
-				q.coinserversMtx.Unlock()
 			case "updated":
-				q.coinserversMtx.Lock()
 				q.coinservers[update.ServiceID] = update.Status
-				q.coinserversMtx.Unlock()
 			case "added":
 				endpoint := labels["endpoint"]
 				connCfg := &rpcclient.ConnConfig{
@@ -188,18 +184,16 @@ func (q *NgWebAPI) WatchCoinservers() {
 				client, err := rpcclient.New(connCfg, nil)
 				if err != nil {
 					q.log.Error("Failed to init RPC client obj", "err", err)
-					continue
+				} else {
+					q.currencyRPC[currency] = client
 				}
-				q.currencyRPCMtx.Lock()
-				q.currencyRPC[currency] = client
-				q.currencyRPCMtx.Unlock()
 
-				q.coinserversMtx.Lock()
 				q.coinservers[update.ServiceID] = update.Status
-				q.coinserversMtx.Unlock()
 			default:
 				q.log.Warn("Unrecognized action from service watcher", "action", update.Action)
 			}
+			q.coinserversMtx.Unlock()
+			q.currencyRPCMtx.Unlock()
 		}
 	}()
 }
