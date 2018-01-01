@@ -118,7 +118,7 @@ CREATE TABLE credit
         REFERENCES payout_transaction (hash) MATCH SIMPLE
         ON UPDATE NO ACTION
         ON DELETE NO ACTION,
-    CONSTRAINT unique_credit UNIQUE (user_id, blockhash),
+    CONSTRAINT unique_credit UNIQUE (user_id, blockhash, sharechain),
     CONSTRAINT blockhash_fk FOREIGN KEY (blockhash)
         REFERENCES block (hash) MATCH SIMPLE
         ON UPDATE NO ACTION
