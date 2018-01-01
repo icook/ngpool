@@ -35,6 +35,23 @@ type Payout struct {
 	Confirmed bool       `json:"confirmed"`
 }
 
+func (q *NgWebAPI) getUnpaid(c *gin.Context) {
+	userID := c.GetInt("userID")
+	var credits = []Credit{}
+	err := q.db.Select(&credits,
+		`SELECT c.amount, c.sharechain, c.blockhash, b.mined_at
+		FROM credit as c
+		JOIN block as b ON c.blockhash = b.hash
+		WHERE payout_transaction IS NULL AND c.user_id = $1
+		ORDER BY b.mined_at`, userID)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	q.apiSuccess(c, 200, res{"credits": credits})
+}
+
 func (q *NgWebAPI) getPayout(c *gin.Context) {
 	userID := c.GetInt("userID")
 	var txhash = c.Param("hash")
