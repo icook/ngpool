@@ -132,21 +132,23 @@ MerkleLoop:
 	return &job, nil
 }
 
-func (j *Job) SetFlush(lastJobSetFlush interface{}) interface{} {
+func (j *Job) SetFlush(lastJobSetFlush interface{}) (bool, interface{}) {
 	switch prev := lastJobSetFlush.(type) {
 	case map[string]int64:
 		if j.height > prev[j.currencyConfig.Code] {
 			j.cleanJobs = true
-			return j.heights
+			return false, j.height
+		} else if j.height < prev[j.currencyConfig.Code] {
+			return true, nil
 		}
 		for _, aux := range j.auxChains {
 			if aux.currencyConfig.FlushAux && aux.height > prev[aux.currencyConfig.Code] {
 				j.cleanJobs = true
-				return j.heights
+				return false, j.heights
 			}
 		}
 	}
-	return j.heights
+	return false, j.heights
 }
 
 func (j *Job) GetStratumParams() ([]interface{}, error) {

@@ -248,9 +248,13 @@ func (n *StratumServer) listenTemplates() {
 		log.Info("Got new template", "key", newTemplate.key)
 		latestTemp[newTemplate.key] = newTemplate.data
 		job, err := NewJobFromTemplates(latestTemp)
-		lastJobFlush = job.SetFlush(lastJobFlush)
+		ignore, lastJobFlush := job.SetFlush(lastJobFlush)
 		if err != nil {
 			log.Error("Error generating job", "err", err)
+			continue
+		}
+		if ignore {
+			log.Info("Ignoring stale job")
 			continue
 		}
 		n.lastJobMtx.Lock()
