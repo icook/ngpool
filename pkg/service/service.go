@@ -13,9 +13,9 @@ import (
 )
 
 type Service struct {
-	name       string
-	namespace  string
+	Name       string
 	PushStatus chan map[string]interface{}
+	namespace  string
 	etcdKeys   client.KeysAPI
 }
 
@@ -55,9 +55,9 @@ func NewService(namespace string, etcdEndpoints []string) *Service {
 }
 
 func (s *Service) LoadServiceConfig(config *viper.Viper, name string) {
-	s.name = name
+	s.Name = name
 
-	keyPath := "/config/" + s.namespace + "/" + s.name
+	keyPath := "/config/" + s.namespace + "/" + s.Name
 	res, err := s.etcdKeys.Get(context.Background(), keyPath, nil)
 	if err != nil {
 		log.Crit("Unable to contact etcd", "err", err)
@@ -215,7 +215,7 @@ func (s *Service) KeepAlive(labels map[string]string) error {
 		lastValue  string
 		lastStatus map[string]interface{} = make(map[string]interface{})
 	)
-	if s.name == "" {
+	if s.Name == "" {
 		log.Crit(`Cannot start service KeepAlive without name set.
 			Call LoadServiceConfig, or set manually`)
 		os.Exit(1)
@@ -259,7 +259,7 @@ func (s *Service) KeepAlive(labels map[string]string) error {
 
 		// Set TTL update, or new information
 		_, err = s.etcdKeys.Set(
-			context.Background(), "/status/"+s.namespace+"/"+s.name, value, opt)
+			context.Background(), "/status/"+s.namespace+"/"+s.Name, value, opt)
 		if err != nil {
 			log.Warn("Failed to update etcd status entry", "err", err)
 			continue
