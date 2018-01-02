@@ -13,10 +13,11 @@ func scryptHash(input []byte) ([]byte, error) {
 }
 
 type Algo struct {
-	Name       string
-	PoWHash    HashFunc
-	ShareDiff1 *big.Float
-	NetDiff1   float64
+	Name           string
+	PoWHash        HashFunc
+	ShareDiff1     *big.Float
+	NetDiff1       float64
+	HashesPerShare int64
 }
 
 func (u *Algo) MarshalJSON() ([]byte, error) {
@@ -40,7 +41,7 @@ func (a *Algo) Diff1SharesForTarget(blockTarget float64) (float64, big.Accuracy)
 	return diff1.Quo(diff1, blockTargetBig).Float64()
 }
 
-func NewAlgoConfig(name string, diff1Hex string, powFunc HashFunc) *Algo {
+func NewAlgoConfig(name string, diff1Hex string, powFunc HashFunc, hps int64) *Algo {
 	diff1 := big.Float{}
 	_, _, err := diff1.Parse(diff1Hex, 16)
 	if err != nil {
@@ -50,10 +51,11 @@ func NewAlgoConfig(name string, diff1Hex string, powFunc HashFunc) *Algo {
 	shareDiff1, _ := diff1.Float64()
 
 	ac := &Algo{
-		Name:       name,
-		ShareDiff1: &diff1,
-		NetDiff1:   shareDiff1 / (0xFFFF - 1),
-		PoWHash:    powFunc,
+		Name:           name,
+		ShareDiff1:     &diff1,
+		NetDiff1:       shareDiff1 / (0xFFFF - 1),
+		PoWHash:        powFunc,
+		HashesPerShare: hps,
 	}
 	AlgoConfig[name] = ac
 	return ac
@@ -65,5 +67,7 @@ func init() {
 	NewAlgoConfig(
 		"scrypt",
 		"0000ffff00000000000000000000000000000000000000000000000000000000",
-		scryptHash)
+		scryptHash,
+		65536,
+	)
 }
