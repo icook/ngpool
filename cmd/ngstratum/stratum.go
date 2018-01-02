@@ -23,7 +23,6 @@ import (
 	"github.com/r3labs/sse"
 	"github.com/seehuhn/sha256d"
 	"github.com/spf13/viper"
-	_ "github.com/spf13/viper/remote"
 
 	"github.com/icook/ngpool/pkg/lbroadcast"
 	"github.com/icook/ngpool/pkg/service"
@@ -75,6 +74,7 @@ type StratumServer struct {
 	coinserverWatchers map[string]*CoinserverWatcher
 	newShare           chan *Share
 	newTemplate        chan *Template
+	newClient          chan *StratumClient
 	jobCast            broadcast.Broadcaster
 	service            *service.Service
 
@@ -90,6 +90,7 @@ func NewStratumServer() *StratumServer {
 	ng := &StratumServer{
 		newTemplate:  make(chan *Template),
 		newShare:     make(chan *Share),
+		newClient:    make(chan *StratumClient),
 		blockCast:    make(map[string]broadcast.Broadcaster),
 		blockCastMtx: &sync.Mutex{},
 		lastJobMtx:   &sync.Mutex{},
@@ -175,6 +176,30 @@ func (n *StratumServer) Start() {
 	}
 	go n.ListenMiners()
 	go n.ListenShares()
+	go n.UpdateStatus()
+}
+
+func (n *StratumServer) UpdateStatus() {
+	var clients = map[string]*StratumClient{}
+	var ticker = time.NewTicker(time.Second * 1)
+	for {
+		select {
+		case newClient := <-n.newClient:
+			clients[newClient.id] = newClient
+		case <-ticker.C:
+			var clientStatuses = []interface{}{}
+			for _, client := range clients {
+				if client.hasShutdown {
+					delete(clients, client.id)
+					continue
+				}
+				clientStatuses = append(clientStatuses, client.status())
+			}
+			n.service.PushStatus <- map[string]interface{}{
+				"clients": clientStatuses,
+			}
+		}
+	}
 }
 
 func (n *StratumServer) ListenShares() {
@@ -492,8 +517,9 @@ func (n *StratumServer) ListenMiners() {
 			log.Warn("Failed to accept connection", "err", err)
 			continue
 		}
-		c := NewClient(conn, n.jobCast, n.newShare)
-		c.Start()
+		client := NewClient(conn, n.jobCast, n.newShare)
+		client.Start()
+		n.newClient <- client
 	}
 }
 

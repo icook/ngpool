@@ -110,6 +110,13 @@ func (c *StratumClient) Extranonce1() []byte {
 	return out
 }
 
+func (c *StratumClient) status() []interface{} {
+	return []interface{}{
+		c.username,
+		c.diff,
+	}
+}
+
 func (c *StratumClient) writeLoop() {
 	defer c.Stop()
 
