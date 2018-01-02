@@ -121,6 +121,7 @@ func (n *StratumServer) ParseConfig() {
 		log.Crit("Invalid ShareChainName", "options", keys, "setting", scn)
 		os.Exit(1)
 	}
+	// TODO: Ensure that all template keys match the algo of the sharechain
 	n.shareChain = sc
 
 	db, err := sqlx.Connect("postgres", n.config.GetString("DbConnectionString"))
