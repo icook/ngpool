@@ -8,7 +8,8 @@ import (
 )
 
 type customClaims struct {
-	UserID int `json:"user_id"`
+	Username string `json:"username"`
+	UserID   int    `json:"user_id"`
 	jwt.StandardClaims
 }
 
@@ -39,6 +40,7 @@ func (q *NgWebAPI) authMiddleware(c *gin.Context) {
 		}
 		claims := token.Claims.(*customClaims)
 		c.Set("userID", claims.UserID)
+		c.Set("username", claims.Username)
 	} else {
 		c.Abort()
 		q.apiError(c, 403, APIError{

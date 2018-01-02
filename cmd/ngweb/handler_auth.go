@@ -28,22 +28,22 @@ func (q *NgWebAPI) postTFA(c *gin.Context) {
 		return
 	}
 	userID := c.GetInt("userID")
-	user := make(map[string]interface{})
+	var user User
 	err := q.db.QueryRowx(
 		"SELECT tfa_code, tfa_enabled FROM users WHERE id = $1",
-		userID).MapScan(user)
+		userID).StructScan(&user)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
 	}
-	valid := totp.Validate(req.Code, user["tfa_code"].(string))
+	valid := totp.Validate(req.Code, user.TFACode)
 	if !valid {
 		q.apiError(c, 400, APIError{
 			Code:  "invalid_code",
 			Title: "The two factor code provided is not valid"})
 		return
 	}
-	if !user["tfa_enabled"].(bool) {
+	if !user.TFAEnabled {
 		res, err := q.db.Exec(`UPDATE users SET tfa_enabled = true WHERE id = $1`, userID)
 		if err != nil {
 			q.apiException(c, 500, errors.WithStack(err), SQLError)
@@ -55,7 +55,7 @@ func (q *NgWebAPI) postTFA(c *gin.Context) {
 			return
 		}
 	}
-	tokenString, err := q.createToken(userID, JWTRealms)
+	tokenString, err := q.createToken(user.Username, userID, JWTRealms)
 	q.apiSuccess(c, 200, res{"token": tokenString})
 }
 
@@ -113,9 +113,10 @@ func (q *NgWebAPI) postLogin(c *gin.Context) {
 	if !q.BindValid(c, &req) {
 		return
 	}
-	user := make(map[string]interface{})
+	var user User
 	err = q.db.QueryRowx(
-		"SELECT * FROM users WHERE username = $1", req.Username).MapScan(user)
+		"SELECT id, username, password, tfa_enabled FROM users WHERE username = $1",
+		req.Username).StructScan(&user)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			q.apiError(c, 403, APIError{
@@ -127,7 +128,7 @@ func (q *NgWebAPI) postLogin(c *gin.Context) {
 		return
 	}
 	err = bcrypt.CompareHashAndPassword(
-		[]byte(user["password"].(string)), []byte(req.Password))
+		[]byte(user.Password), []byte(req.Password))
 	if err != nil {
 		q.apiError(c, 403, APIError{
 			Code:  "invalid_auth",
@@ -137,12 +138,12 @@ func (q *NgWebAPI) postLogin(c *gin.Context) {
 	// Only given them read access and tfa auth endpoint access if they have
 	// tfa enabled. Otherwise full access
 	var realms []string
-	if user["tfa_enabled"].(bool) {
+	if user.TFAEnabled {
 		realms = []string{"tfa"}
 	} else {
 		realms = JWTRealms
 	}
-	tokenString, err := q.createToken(int(user["id"].(int64)), realms)
+	tokenString, err := q.createToken(user.Username, user.ID, realms)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), APIError{
 			Code:  "tokengen_err",
@@ -150,18 +151,18 @@ func (q *NgWebAPI) postLogin(c *gin.Context) {
 		return
 	}
 	q.apiSuccess(c, 200, res{
-		"user_id":  user["id"],
-		"username": user["username"],
-		"token":    tokenString,
-		"tfa":      user["tfa_enabled"],
-		// TODO: Refactor to tfa_enabled
+		"user_id":     user.ID,
+		"username":    user.Username,
+		"token":       tokenString,
+		"tfa_enabled": user.TFAEnabled,
 	})
 }
 
-func (q *NgWebAPI) createToken(id int, realms []string) (string, error) {
+func (q *NgWebAPI) createToken(username string, id int, realms []string) (string, error) {
 	expire := time.Now().Add(time.Hour).Unix()
 	token := jwt.NewWithClaims(signMethod, customClaims{
-		UserID: id,
+		Username: username,
+		UserID:   id,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expire,
 		},
