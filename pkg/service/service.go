@@ -15,7 +15,7 @@ import (
 type Service struct {
 	name       string
 	namespace  string
-	pushStatus chan map[string]interface{}
+	PushStatus chan map[string]interface{}
 	etcdKeys   client.KeysAPI
 }
 
@@ -47,8 +47,9 @@ func NewService(namespace string, etcdEndpoints []string) *Service {
 	}
 
 	s := &Service{
-		namespace: namespace,
-		etcdKeys:  client.NewKeysAPI(etcd),
+		namespace:  namespace,
+		etcdKeys:   client.NewKeysAPI(etcd),
+		PushStatus: make(chan map[string]interface{}),
 	}
 	return s
 }
@@ -225,7 +226,7 @@ func (s *Service) KeepAlive(labels map[string]string) error {
 	}
 	for {
 		select {
-		case lastStatus = <-s.pushStatus:
+		case lastStatus = <-s.PushStatus:
 		case <-time.After(time.Second * 1):
 		}
 
