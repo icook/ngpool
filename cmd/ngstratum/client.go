@@ -116,12 +116,12 @@ func (c *StratumClient) Extranonce1() []byte {
 	return out
 }
 
-func (c *StratumClient) status() []interface{} {
-	return []interface{}{
+func (c *StratumClient) status() common.StratumClientStatus {
+	return common.StratumClientStatus{
 		c.username,
+		c.shareWindow.RateSecond() * 65536,
 		c.worker,
 		c.diff,
-		c.shareWindow.RateSecond() * 65536,
 	}
 }
 

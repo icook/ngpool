@@ -19,6 +19,14 @@ var UserKeygenRealms = []string{"trade", "withdraw"}
 // The relams we give to conventional logins through the web interface
 var JWTRealms = []string{"trade", "withdraw", "keygen", "tfa"}
 
+type User struct {
+	Username   string
+	ID         int
+	Password   string
+	TFAEnabled bool   `db:"tfa_enabled"`
+	TFACode    string `db:"tfa_code"`
+}
+
 func (q *NgWebAPI) postTFA(c *gin.Context) {
 	type TwoFactoReq struct {
 		Code string `validate:"required"`

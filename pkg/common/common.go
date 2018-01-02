@@ -15,6 +15,17 @@ type PayoutMeta struct {
 	Inputs        []UTXO
 }
 
+type StratumStatus struct {
+	Clients []StratumClientStatus `json:"clients"`
+}
+
+type StratumClientStatus struct {
+	Username   string  `json:"username"`
+	Hashrate   float64 `json:"hashrate"`
+	Worker     string  `json:"worker"`
+	Difficulty float64 `json:"difficulty"`
+}
+
 // Contains information the
 type PayoutMap struct {
 	CreditIDs []int

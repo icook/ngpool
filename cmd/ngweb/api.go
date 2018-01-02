@@ -1,14 +1,6 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/icook/btcd/rpcclient"
-	"github.com/icook/ngpool/pkg/service"
-	log "github.com/inconshreveable/log15"
-	"github.com/itsjamie/gin-cors"
-	"github.com/jmoiron/sqlx"
-	"github.com/spf13/viper"
-	"gopkg.in/go-playground/validator.v9"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,6 +8,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/icook/btcd/rpcclient"
+	log "github.com/inconshreveable/log15"
+	"github.com/itsjamie/gin-cors"
+	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/mapstructure"
+	"github.com/spf13/viper"
+	"gopkg.in/go-playground/validator.v9"
+
+	"github.com/icook/ngpool/pkg/common"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 var validate = validator.New()
@@ -34,8 +38,9 @@ type NgWebAPI struct {
 	coinservers    map[string]*service.ServiceStatus
 	coinserversMtx *sync.RWMutex
 
-	stratums    map[string]*service.ServiceStatus
-	stratumsMtx *sync.RWMutex
+	stratums       map[string]*service.ServiceStatus
+	stratumClients map[string][]*common.StratumClientStatus
+	stratumsMtx    *sync.RWMutex
 }
 
 func NewNgWebAPI() *NgWebAPI {
@@ -48,8 +53,9 @@ func NewNgWebAPI() *NgWebAPI {
 		coinservers:    map[string]*service.ServiceStatus{},
 		coinserversMtx: &sync.RWMutex{},
 
-		stratums:    map[string]*service.ServiceStatus{},
-		stratumsMtx: &sync.RWMutex{},
+		stratums:       map[string]*service.ServiceStatus{},
+		stratumClients: map[string][]*common.StratumClientStatus{},
+		stratumsMtx:    &sync.RWMutex{},
 	}
 
 	return &ngw
@@ -120,6 +126,7 @@ func (q *NgWebAPI) SetupGin() {
 		api.POST("setpayout", q.postSetPayout)
 		api.POST("changepass", q.postChangePassword)
 
+		api.GET("workers", q.getWorkers)
 		api.GET("unpaid", q.getUnpaid)
 		api.GET("payouts", q.getPayouts)
 		api.GET("payout/:hash", q.getPayout)
@@ -148,7 +155,21 @@ func (q *NgWebAPI) WatchStratum() {
 			default:
 				q.log.Warn("Unrecognized action from service watcher", "action", update.Action)
 			}
+			clients := map[string][]*common.StratumClientStatus{}
+			for _, rawStatus := range q.stratums {
+				var status common.StratumStatus
+				err := mapstructure.Decode(rawStatus.Status, &status)
+				if err != nil {
+					q.log.Error("Invalid type in stratum status clients", "err", err)
+					continue
+				}
+				for _, client := range status.Clients {
+					clients[client.Username] = append(clients[client.Username], &client)
+				}
+			}
+			q.stratumClients = clients
 			q.stratumsMtx.Unlock()
+
 		}
 	}()
 }

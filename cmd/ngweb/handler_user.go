@@ -592,3 +592,14 @@ func (q *NgWebAPI) postPayout(c *gin.Context) {
 		q.log.Error("Failed to send txs after postPayout", "err", err)
 	}
 }
+
+func (q *NgWebAPI) getWorkers(c *gin.Context) {
+	username := c.GetString("username")
+	q.stratumsMtx.RLock()
+	workers := q.stratumClients[username]
+	if workers == nil {
+		workers = []*common.StratumClientStatus{}
+	}
+	q.apiSuccess(c, 200, res{"workers": workers})
+	q.stratumsMtx.RUnlock()
+}

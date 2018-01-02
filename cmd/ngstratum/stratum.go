@@ -24,6 +24,7 @@ import (
 	"github.com/seehuhn/sha256d"
 	"github.com/spf13/viper"
 
+	"github.com/icook/ngpool/pkg/common"
 	"github.com/icook/ngpool/pkg/lbroadcast"
 	"github.com/icook/ngpool/pkg/service"
 )
@@ -187,7 +188,7 @@ func (n *StratumServer) UpdateStatus() {
 		case newClient := <-n.newClient:
 			clients[newClient.id] = newClient
 		case <-ticker.C:
-			var clientStatuses = []interface{}{}
+			var clientStatuses = []common.StratumClientStatus{}
 			for _, client := range clients {
 				if client.hasShutdown {
 					delete(clients, client.id)
