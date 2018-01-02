@@ -29,6 +29,8 @@ type StratumClient struct {
 	jobCast     broadcast.Broadcaster
 	newShare    chan *Share
 	submit      chan *MiningSubmit
+	shutdown    chan interface{}
+	hasShutdown bool
 	log         log.Logger
 	conn        net.Conn
 }
@@ -51,6 +53,7 @@ func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Shar
 		attrs:       map[string]string{},
 		jobCast:     jobCast,
 		jobListener: make(chan interface{}),
+		shutdown:    make(chan interface{}),
 		submit:      make(chan *MiningSubmit),
 		write:       make(chan []byte, 10),
 		newShare:    newShare,
@@ -60,7 +63,15 @@ func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Shar
 }
 
 func (c *StratumClient) Stop() {
+	// Either write or read thread exit trigger shutdown, so it might get
+	// called multiple times
+	if c.hasShutdown {
+		return
+	}
+
 	c.log.Info("Client disconnect")
+	close(c.shutdown)
+	c.hasShutdown = true
 	err := c.conn.Close()
 	c.jobCast.Unregister(c.jobListener)
 	if err != nil {
@@ -109,6 +120,8 @@ func (c *StratumClient) writeLoop() {
 	var submission *MiningSubmit
 	for {
 		select {
+		case <-c.shutdown:
+			return
 		// Anything that writes to the client pushes onto this channel
 		case resp = <-c.write:
 			writer.Write(resp)
@@ -306,6 +319,10 @@ func (c *StratumClient) readLoop() {
 			c.submit <- ms
 		default:
 			c.log.Warn("Invalid message method", "method", msg.Method)
+		}
+
+		if c.hasShutdown {
+			return
 		}
 	}
 }
