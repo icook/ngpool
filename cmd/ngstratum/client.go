@@ -13,6 +13,8 @@ import (
 	"github.com/dustin/go-broadcast"
 	log "github.com/inconshreveable/log15"
 	_ "github.com/spf13/viper/remote"
+
+	"github.com/icook/ngpool/pkg/common"
 )
 
 type StratumClient struct {
@@ -31,6 +33,7 @@ type StratumClient struct {
 	submit      chan *MiningSubmit
 	shutdown    chan interface{}
 	hasShutdown bool
+	shareWindow common.Window
 	log         log.Logger
 	conn        net.Conn
 }
@@ -57,6 +60,7 @@ func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Shar
 		submit:      make(chan *MiningSubmit),
 		write:       make(chan []byte, 10),
 		newShare:    newShare,
+		shareWindow: common.NewWindow(50),
 	}
 	sc.log = log.New("clientid", sc.id)
 	return sc
@@ -114,6 +118,7 @@ func (c *StratumClient) status() []interface{} {
 	return []interface{}{
 		c.username,
 		c.diff,
+		c.shareWindow.RateSecond() * 65536,
 	}
 }
 
@@ -193,6 +198,7 @@ func (c *StratumClient) writeLoop() {
 				difficulty: clientJob.difficulty,
 				blocks:     blocks,
 			}
+			c.shareWindow.Add(clientJob.difficulty)
 
 		case raw = <-c.jobListener:
 			if raw == nil {
@@ -312,6 +318,8 @@ func (c *StratumClient) readLoop() {
 			c.updateDiff()
 			c.log.Debug("Subscribing to jobs")
 			c.jobCast.Register(c.jobListener)
+			// Start the time window for hashrate average right now
+			c.shareWindow.Add(0)
 		case "mining.submit":
 			if !c.subscribed {
 				c.sendError(msg.ID, StratumErrorNotSubbed)
