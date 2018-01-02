@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-broadcast"
@@ -23,6 +24,7 @@ type StratumClient struct {
 	// State information
 	attrs      map[string]string
 	username   string
+	worker     string
 	subscribed bool
 	diff       float64
 
@@ -117,6 +119,7 @@ func (c *StratumClient) Extranonce1() []byte {
 func (c *StratumClient) status() []interface{} {
 	return []interface{}{
 		c.username,
+		c.worker,
 		c.diff,
 		c.shareWindow.RateSecond() * 65536,
 	}
@@ -305,8 +308,15 @@ func (c *StratumClient) readLoop() {
 				c.sendError(msg.ID, StratumErrorOther)
 				continue
 			}
-			// We ignore passwords
-			c.username = ma.Username
+			// We ignore passwords. Trim worker name just in case
+			if len(ma.Username) > 65 {
+				ma.Username = ma.Username[:65]
+			}
+			parts := strings.SplitN(ma.Username, ".", 2)
+			if len(parts) == 2 {
+				c.worker = parts[1]
+			}
+			c.username = parts[0]
 			err = c.send(&StratumResponse{
 				ID:     msg.ID,
 				Result: true,
