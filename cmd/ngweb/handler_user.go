@@ -596,10 +596,17 @@ func (q *NgWebAPI) postPayout(c *gin.Context) {
 func (q *NgWebAPI) getWorkers(c *gin.Context) {
 	username := c.GetString("username")
 	q.stratumsMtx.RLock()
-	workers := q.stratumClients[username]
-	if workers == nil {
-		workers = []*common.StratumClientStatus{}
+	workerList := q.stratumClients[username]
+	q.stratumsMtx.RUnlock()
+	workers := map[string]*common.StratumClientStatus{}
+	for _, worker := range workerList {
+		// If they have multiple stratum clients with the same worker name we
+		// still want them to show up on the list, so we append a * for each
+		// duplicate. Stratum does no validation of worker names
+		if _, ok := workers[worker.Name]; ok {
+			worker.Name = worker.Name + "*"
+		}
+		workers[worker.Name] = worker
 	}
 	q.apiSuccess(c, 200, res{"workers": workers})
-	q.stratumsMtx.RUnlock()
 }

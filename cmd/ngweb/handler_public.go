@@ -119,7 +119,7 @@ func (q *NgWebAPI) getCommon(c *gin.Context) {
 
 func (q *NgWebAPI) getMinuteShares(c *gin.Context) {
 	var cat = c.Param("cat")
-	var ms = []*struct {
+	type MinuteShare struct {
 		Cat        string    `json:"cat"`
 		Key        string    `json:"key"`
 		Minute     time.Time `json:"minute"`
@@ -130,7 +130,8 @@ func (q *NgWebAPI) getMinuteShares(c *gin.Context) {
 
 		// Computed after loading from DB
 		Hashrate int64 `json:"hashrate"`
-	}{}
+	}
+	var ms = []*MinuteShare{}
 	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 	base := psql.Select("cat, key, minute, difficulty, shares, sharechain, stratum").
 		From("minute_share").OrderBy("minute").
@@ -150,14 +151,16 @@ func (q *NgWebAPI) getMinuteShares(c *gin.Context) {
 		return
 	}
 
+	keys := map[string][]*MinuteShare{}
 	for _, slice := range ms {
 		chain, ok := service.ShareChain[slice.ShareChain]
 		if !ok {
 			continue
 		}
 		slice.Hashrate = int64(slice.Difficulty * float64(chain.Algo.HashesPerShare) / 60)
+		keys[slice.Key] = append(keys[slice.Key], slice)
 	}
-	q.apiSuccess(c, 200, res{"minute_shares": ms})
+	q.apiSuccess(c, 200, res{"minute_shares": keys})
 }
 
 func (q *NgWebAPI) getServices(c *gin.Context) {

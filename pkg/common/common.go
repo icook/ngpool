@@ -22,7 +22,7 @@ type StratumStatus struct {
 type StratumClientStatus struct {
 	Username   string  `json:"username"`
 	Hashrate   float64 `json:"hashrate"`
-	Worker     string  `json:"worker"`
+	Name       string  `json:"worker"`
 	Difficulty float64 `json:"difficulty"`
 }
 
