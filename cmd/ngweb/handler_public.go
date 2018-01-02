@@ -117,6 +117,49 @@ func (q *NgWebAPI) getCommon(c *gin.Context) {
 	})
 }
 
+func (q *NgWebAPI) getMinuteShares(c *gin.Context) {
+	var cat = c.Param("cat")
+	var ms = []*struct {
+		Cat        string    `json:"cat"`
+		Key        string    `json:"key"`
+		Minute     time.Time `json:"minute"`
+		Difficulty float64   `json:"difficulty"`
+		Shares     int       `json:"shares"`
+		ShareChain string    `json:"sharechain"`
+		Stratum    string    `json:"stratum"`
+
+		// Computed after loading from DB
+		Hashrate int64 `json:"hashrate"`
+	}{}
+	psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+	base := psql.Select("cat, key, minute, difficulty, shares, sharechain, stratum").
+		From("minute_share").OrderBy("minute").
+		Where(sq.Eq{"cat": cat})
+	if key := c.Param("key"); key != "" {
+		base = base.Where(sq.Eq{"key": key})
+	}
+	qstring, args, err := base.ToSql()
+	q.log.Info("q", "q", qstring)
+	if err != nil {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+	err = q.db.Select(&ms, qstring, args...)
+	if err != nil && err != sql.ErrNoRows {
+		q.apiException(c, 500, errors.WithStack(err), SQLError)
+		return
+	}
+
+	for _, slice := range ms {
+		chain, ok := service.ShareChain[slice.ShareChain]
+		if !ok {
+			continue
+		}
+		slice.Hashrate = int64(slice.Difficulty * float64(chain.Algo.HashesPerShare) / 60)
+	}
+	q.apiSuccess(c, 200, res{"minute_shares": ms})
+}
+
 func (q *NgWebAPI) getServices(c *gin.Context) {
 	// TODO: This structure could be serialized on each update in the listener
 	// to avoid possible funkiness with locks here

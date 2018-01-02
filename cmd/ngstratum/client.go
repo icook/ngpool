@@ -196,6 +196,7 @@ func (c *StratumClient) writeLoop() {
 			clientJob.submissionMap[submissionKey] = true
 			c.newShare <- &Share{
 				username:   c.username,
+				worker:     c.worker,
 				time:       time.Now(),
 				currencies: currencies,
 				difficulty: clientJob.difficulty,

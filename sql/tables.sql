@@ -3,10 +3,12 @@ DROP TABLE IF EXISTS payout_transaction CASCADE;
 DROP TABLE IF EXISTS share CASCADE;
 DROP TABLE IF EXISTS block CASCADE;
 DROP TABLE IF EXISTS payout_address CASCADE;
+DROP TABLE IF EXISTS minute_share CASCADE;
 DROP TABLE IF EXISTS credit CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS payout CASCADE;
 DROP TYPE IF EXISTS block_status CASCADE;
+DROP TYPE IF EXISTS aggregation_type CASCADE;
 
 CREATE TABLE share
 (
@@ -15,6 +17,20 @@ CREATE TABLE share
     mined_at timestamp NOT NULL,
     sharechain varchar NOT NULL,
     currencies varchar[] NOT NULL
+);
+
+CREATE TYPE aggregation_type AS ENUM ('sharechain', 'user', 'mature');
+CREATE TABLE minute_share
+(
+    cat varchar NOT NULL,
+    key varchar NOT NULL,
+    minute timestamp NOT NULL,
+    difficulty double precision NOT NULL,
+    shares integer NOT NULL,
+
+    sharechain varchar NOT NULL,
+    stratum varchar NOT NULL,
+    CONSTRAINT minute_share_pkey PRIMARY KEY (cat, key, minute)
 );
 
 CREATE TABLE utxo

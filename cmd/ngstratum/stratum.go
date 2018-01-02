@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/dustin/go-broadcast"
 	"github.com/icook/btcd/rpcclient"
 	log "github.com/inconshreveable/log15"
@@ -49,6 +50,7 @@ func (b *BlockSolve) getBlockHash() string {
 
 type Share struct {
 	username   string
+	worker     string
 	time       time.Time
 	difficulty float64
 	currencies []string
@@ -244,13 +246,29 @@ func (n *StratumServer) ListenShares() {
 				share.username,
 				block.target.String(),
 				hex.EncodeToString(block.coinbaseHash))
-			if err != nil {
-				log.Error("Failed to save block", "err", err)
-			}
+
+		}
+		mt := share.time.Truncate(time.Minute)
+		psql := sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+		base := psql.Insert("minute_share").
+			Columns("minute", "cat", "key", "difficulty", "shares", "sharechain", "stratum").
+			Values(mt, share.username, share.worker, share.difficulty, 1, n.shareChain.Name, n.service.Name).
+			Values(mt, "sharechain", n.shareChain.Name, share.difficulty, 1, n.shareChain.Name, n.service.Name).
+			Suffix(`ON CONFLICT (cat, key, minute) DO UPDATE SET
+				difficulty = minute_share.difficulty + ?,
+				shares = minute_share.shares + 1`, share.difficulty)
+		for _, tmpl := range n.tmplKeys {
+			base = base.Values(mt, "currency", tmpl.Currency, share.difficulty, 1, n.shareChain.Name, n.service.Name)
+		}
+		qstring, args, err := base.ToSql()
+		log.Info("sql", "sql", qstring)
+		_, err = n.db.Exec(qstring, args...)
+		if err != nil {
+			log.Error("Failed to save minute shares", "err", err)
 		}
 
 		// Log the users share
-		_, err := n.db.Exec(
+		_, err = n.db.Exec(
 			`INSERT INTO share (username, difficulty, mined_at, sharechain, currencies)
 			VALUES ($1, $2, $3, $4, $5)`,
 			share.username,
