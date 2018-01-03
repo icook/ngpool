@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math/big"
 
+	"github.com/bitgoin/lyra2rev2"
 	"github.com/seehuhn/sha256d"
 	"golang.org/x/crypto/scrypt"
 )
@@ -14,7 +15,7 @@ func scryptHash(input []byte) ([]byte, error) {
 	return scrypt.Key(input, input, 1024, 1, 1, 32)
 }
 
-func sha256dhash(input []byte) ([]byte, error) {
+func sha256dHash(input []byte) ([]byte, error) {
 	hsh := sha256d.New()
 	hsh.Write(input)
 	return hsh.Sum(nil), nil
@@ -81,7 +82,13 @@ func init() {
 	NewAlgoConfig(
 		"sha256d",
 		"00000000FFFF0000000000000000000000000000000000000000000000000000",
-		sha256dhash,
+		sha256dHash,
+		0xFFFFFFFF,
+	)
+	NewAlgoConfig(
+		"lyra2rev2",
+		"00000000FFFF0000000000000000000000000000000000000000000000000000",
+		lyra2rev2.Sum,
 		0xFFFFFFFF,
 	)
 }

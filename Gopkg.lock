@@ -9,9 +9,21 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/aead/skein"
+  packages = [".","threefish"]
+  revision = "9365ae6e95d294dc113a0b308852f97c916db233"
+
+[[projects]]
+  branch = "master"
   name = "github.com/armon/consul-api"
   packages = ["."]
   revision = "dcfedd50ed5334f96adee43fc88518a4f095e15c"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/bitgoin/lyra2rev2"
+  packages = [".","sha3"]
+  revision = "bae9ad2043bb55facb14c4918e909f88a7d3ed84"
 
 [[projects]]
   name = "github.com/boombuler/barcode"
@@ -67,6 +79,12 @@
   packages = ["spew"]
   revision = "346938d642f2ec3594ed81d874461961cd0faa76"
   version = "v1.1.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/dchest/blake256"
+  packages = ["."]
+  revision = "dee3fe6eb0e98dc774a94fc231f85baf7c29d360"
 
 [[projects]]
   name = "github.com/dgrijalva/jwt-go"
@@ -377,6 +395,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f2ce3525cb9c207c48c3c51bfcde1fb7cedf6d383bbaade65de556d9107d51df"
+  inputs-digest = "0a1f0411d4406192e415d0cbe8e55e3cc2ccf3a3876a293167e9c74116c5819f"
   solver-name = "gps-cdcl"
   solver-version = 1

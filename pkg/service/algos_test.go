@@ -17,10 +17,19 @@ func TestScrypt(t *testing.T) {
 }
 
 func TestSha256d(t *testing.T) {
-	// The genesis block header of bitcoin
+	// The genesis block header of bitcoin testnet
 	headerHex := "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff001d1aa4ae18"
 	header, _ := hex.DecodeString(headerHex)
 	hsh, _ := AlgoConfig["sha256d"].PoWHash(header)
 	hshHex := hex.EncodeToString(hsh)
 	assert.Equal(t, "43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000", hshHex)
+}
+
+func TestLyra2rev2(t *testing.T) {
+	// The genesis block header of vertcoin testnet
+	headerHex := "010000000000000000000000000000000000000000000000000000000000000000000000e72301fc49323ee151cf1048230f032ca589753ba7086222a5c023e3a08cf34af2b54a58f0ff0f1e53f60d00"
+	header, _ := hex.DecodeString(headerHex)
+	hsh, _ := AlgoConfig["lyra2rev2"].PoWHash(header)
+	hshHex := hex.EncodeToString(hsh)
+	assert.Equal(t, "34f429a69dd5798d133ed6effddf52ed1b503538f8ecd934827d565dcd010000", hshHex)
 }
