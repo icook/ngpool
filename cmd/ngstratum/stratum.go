@@ -261,7 +261,6 @@ func (n *StratumServer) ListenShares() {
 			base = base.Values(mt, "currency", tmpl.Currency, share.difficulty, 1, n.shareChain.Name, n.service.Name)
 		}
 		qstring, args, err := base.ToSql()
-		log.Info("sql", "sql", qstring)
 		_, err = n.db.Exec(qstring, args...)
 		if err != nil {
 			log.Error("Failed to save minute shares", "err", err)
