@@ -2,14 +2,22 @@ package service
 
 import (
 	"encoding/json"
-	"golang.org/x/crypto/scrypt"
 	"math/big"
+
+	"github.com/seehuhn/sha256d"
+	"golang.org/x/crypto/scrypt"
 )
 
 type HashFunc func(input []byte) ([]byte, error)
 
 func scryptHash(input []byte) ([]byte, error) {
 	return scrypt.Key(input, input, 1024, 1, 1, 32)
+}
+
+func sha256dhash(input []byte) ([]byte, error) {
+	hsh := sha256d.New()
+	hsh.Write(input)
+	return hsh.Sum(nil), nil
 }
 
 type Algo struct {
@@ -68,6 +76,12 @@ func init() {
 		"scrypt",
 		"0000ffff00000000000000000000000000000000000000000000000000000000",
 		scryptHash,
-		65536,
+		0xFFFF,
+	)
+	NewAlgoConfig(
+		"sha256d",
+		"00000000FFFF0000000000000000000000000000000000000000000000000000",
+		sha256dhash,
+		0xFFFFFFFF,
 	)
 }
