@@ -5,6 +5,7 @@ import (
 	"math/big"
 
 	"github.com/bitgoin/lyra2rev2"
+	"github.com/icook/powalgo-go"
 	"github.com/seehuhn/sha256d"
 	"golang.org/x/crypto/scrypt"
 )
@@ -87,8 +88,14 @@ func init() {
 	)
 	NewAlgoConfig(
 		"lyra2rev2",
-		"00000000FFFF0000000000000000000000000000000000000000000000000000",
+		"0000ffff00000000000000000000000000000000000000000000000000000000",
 		lyra2rev2.Sum,
 		0xFFFFFFFF,
+	)
+	NewAlgoConfig(
+		"x17",
+		"0000ffff00000000000000000000000000000000000000000000000000000000",
+		powalgo.X17hash,
+		0xFFFF,
 	)
 }

@@ -171,6 +171,12 @@
   revision = "67348c30f9a6255d33000e22408ee3734b1e1e48"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/icook/powalgo-go"
+  packages = ["."]
+  revision = "a13c6aaa5862d6be63fdbfeb2467060a9c366e30"
+
+[[projects]]
   name = "github.com/inconshreveable/log15"
   packages = ["."]
   revision = "0decfc6c20d9ca0ad143b0e89dcaa20f810b4fb3"
@@ -395,6 +401,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0a1f0411d4406192e415d0cbe8e55e3cc2ccf3a3876a293167e9c74116c5819f"
+  inputs-digest = "58ffde16f2b57797357d00a3dd216321ff7a7a1284d1fdf62455052b1a735227"
   solver-name = "gps-cdcl"
   solver-version = 1
