@@ -174,7 +174,7 @@
   branch = "master"
   name = "github.com/icook/powalgo-go"
   packages = ["."]
-  revision = "a13c6aaa5862d6be63fdbfeb2467060a9c366e30"
+  revision = "21d0fe42792315e6677e71693466802ddda84678"
 
 [[projects]]
   name = "github.com/inconshreveable/log15"

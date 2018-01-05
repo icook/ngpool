@@ -98,4 +98,10 @@ func init() {
 		powalgo.X17hash,
 		0xFFFF,
 	)
+	NewAlgoConfig(
+		"argon2",
+		"0000ffff00000000000000000000000000000000000000000000000000000000",
+		powalgo.Argon2Hash,
+		0xFFFF,
+	)
 }
