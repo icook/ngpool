@@ -33,6 +33,7 @@ type StratumClient struct {
 	jobCast     broadcast.Broadcaster
 	newShare    chan *Share
 	submit      chan *MiningSubmit
+	vardiff     *VarDiff
 	shutdown    chan interface{}
 	hasShutdown bool
 	shareWindow common.Window
@@ -50,7 +51,7 @@ func init() {
 	}
 }
 
-func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share) *StratumClient {
+func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share, vardiff *VarDiff) *StratumClient {
 	sc := &StratumClient{
 		subscribed:  false,
 		conn:        conn,
@@ -60,6 +61,7 @@ func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Shar
 		jobListener: make(chan interface{}),
 		shutdown:    make(chan interface{}),
 		submit:      make(chan *MiningSubmit),
+		vardiff:     vardiff,
 		write:       make(chan []byte, 10),
 		newShare:    newShare,
 		shareWindow: common.NewWindow(50),
@@ -90,13 +92,15 @@ func (c *StratumClient) Start() {
 	go c.writeLoop()
 }
 
+// Handle calculating a users difficulty and push a write if it's changed
 func (c *StratumClient) updateDiff() error {
-	newDiff := 0.1
+	rate := c.shareWindow.SampleRateMinute()
+	newDiff := c.vardiff.ComputeNew(c.diff, rate)
 	if c.diff == newDiff {
 		return nil
 	}
+	c.log.Info("Moving to new diff", "diff", newDiff, "rate", rate)
 	c.diff = newDiff
-	// Handle calculating a users difficulty and push a write if it's changed
 	return c.send(&StratumMessage{
 		Method: "mining.set_difficulty",
 		Params: []float64{c.diff},
@@ -132,6 +136,7 @@ func (c *StratumClient) writeLoop() {
 	writer := bufio.NewWriter(c.conn)
 	var resp []byte
 	var raw interface{}
+	var ticker = time.NewTicker(time.Second * 60)
 	var submission *MiningSubmit
 	for {
 		select {
@@ -145,6 +150,9 @@ func (c *StratumClient) writeLoop() {
 				c.log.Debug("Error writing", "err", err)
 				return // Disconnect
 			}
+		// Periodically recalculate difficulty
+		case <-ticker.C:
+			c.updateDiff()
 		// Job listener won't recieve jobs until mining.authorize in the read
 		// loop
 		case submission = <-c.submit:

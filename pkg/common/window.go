@@ -26,6 +26,34 @@ func (w *Window) Add(val float64) {
 	}
 }
 
+func (w *Window) SampleRateSecond() float64 {
+	return w.SampleRate(time.Second)
+}
+
+func (w *Window) SampleRateMinute() float64 {
+	return w.SampleRate(time.Minute)
+}
+
+func (w *Window) SampleRate(interval time.Duration) float64 {
+	var total float64
+	var newest *time.Time
+	for _, sam := range w.samples {
+		if sam == nil {
+			continue
+		}
+		if newest == nil || sam.time.Before(*newest) {
+			newest = &sam.time
+		}
+		total += 1
+	}
+	if newest == nil {
+		return 0
+	}
+	periods := float64(time.Now().Sub(*newest)) / float64(interval)
+
+	return total / periods
+}
+
 func (w *Window) RateSecond() float64 {
 	return w.Rate(time.Second)
 }
@@ -45,6 +73,9 @@ func (w *Window) Rate(interval time.Duration) float64 {
 			newest = &sam.time
 		}
 		total += sam.amount
+	}
+	if newest == nil {
+		return 0
 	}
 	periods := float64(time.Now().Sub(*newest)) / float64(interval)
 

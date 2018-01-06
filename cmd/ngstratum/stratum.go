@@ -80,6 +80,7 @@ type StratumServer struct {
 	newClient          chan *StratumClient
 	jobCast            broadcast.Broadcaster
 	service            *service.Service
+	vardiff            *VarDiff
 
 	lastJob    *Job
 	lastJobMtx *sync.Mutex
@@ -112,6 +113,9 @@ func (n *StratumServer) ParseConfig() {
 	n.config.SetDefault("LogLevel", "info")
 	n.config.SetDefault("EnableCpuminer", false)
 	n.config.SetDefault("StratumBind", "127.0.0.1:3333")
+	n.config.SetDefault("VardiffMin", 0.125)
+	n.config.SetDefault("VardiffMax", 16384)
+	n.config.SetDefault("VardiffTarget", 20)
 
 	scn := n.config.GetString("ShareChainName")
 	sc, ok := service.ShareChain[scn]
@@ -160,6 +164,12 @@ func (n *StratumServer) ParseConfig() {
 		return
 	}
 	n.tmplKeys = append(tmplKeys, tmplKey)
+
+	n.vardiff = NewVarDiff(
+		n.config.GetFloat64("VardiffMin"),
+		n.config.GetFloat64("VardiffMax"),
+		n.config.GetFloat64("VardiffTarget"),
+	)
 }
 
 func (n *StratumServer) Start() {
@@ -536,7 +546,7 @@ func (n *StratumServer) ListenMiners() {
 			log.Warn("Failed to accept connection", "err", err)
 			continue
 		}
-		client := NewClient(conn, n.jobCast, n.newShare)
+		client := NewClient(conn, n.jobCast, n.newShare, n.vardiff)
 		client.Start()
 		n.newClient <- client
 	}
