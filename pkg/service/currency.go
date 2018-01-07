@@ -43,7 +43,7 @@ type ChainConfigDecoder struct {
 	SubsidyAddress string
 	// The address to payout accumulated fees to
 	FeeAddress string
-	// The name of an algorithm. Current options are scrypt
+	// The name of an algorithm. Current options are scrypt, sha256d, lyra2rev2, x17, argon2
 	PowAlgorithm string
 
 	// These parameters are for github.com/btcsuite/btcd/chaincfg.Params, a
@@ -111,6 +111,7 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 	RawCurrencyConfig = rawConfig
 	for code, rawConfig := range rawConfig {
 		var config ChainConfigDecoder
+		var code = strings.ToUpper(code)
 		err := mapstructure.Decode(rawConfig, &config)
 		if err != nil {
 			panic(err)
@@ -118,7 +119,7 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 		log.Debug("Decoded currency config", "config", config, "rawConfig", rawConfig)
 
 		params := &chaincfg.Params{
-			Name: strings.ToUpper(code),
+			Name: code,
 			Net:  wire.BitcoinNet(config.NetMagic),
 		}
 
@@ -161,9 +162,14 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 		}
 
 		cc := &ChainConfig{
-			Code:                 config.Code,
+			Code:                 code,
 			BlockMatureConfirms:  config.BlockMatureConfirms,
 			PayoutTransactionFee: config.PayoutTransactionFee,
+
+			MultiAlgo:         config.MultiAlgo,
+			MultiAlgoMap:      config.MultiAlgoMap,
+			MultiAlgoBitShift: config.MultiAlgoBitShift,
+			MultiAlgoBitWidth: config.MultiAlgoBitWidth,
 
 			Params:              params,
 			BlockSubsidyAddress: &bsa,
@@ -171,6 +177,6 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 			Algo:                AlgoConfig[config.PowAlgorithm],
 		}
 
-		CurrencyConfig[config.Code] = cc
+		CurrencyConfig[code] = cc
 	}
 }
