@@ -63,9 +63,9 @@ func (q *NgWebAPI) getBlocks(c *gin.Context) {
 		return
 	}
 	for _, block := range blocks {
-		config, ok := service.CurrencyConfig[block.Currency]
+		algo, ok := service.AlgoConfig[block.PowAlgo]
 		if ok {
-			block.Difficulty = config.Algo.NetDiff1 / block.Target
+			block.Difficulty = algo.NetDiff1 / block.Target
 		}
 	}
 	q.apiSuccess(c, 200, res{"blocks": blocks})

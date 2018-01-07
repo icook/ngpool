@@ -301,7 +301,7 @@ func (n *StratumServer) listenTemplates() {
 		newTemplate := <-n.newTemplate
 		log.Info("Got new template", "key", newTemplate.key)
 		latestTemp[newTemplate.key] = newTemplate.data
-		job, err := NewJobFromTemplates(latestTemp)
+		job, err := NewJobFromTemplates(latestTemp, n.shareChain.Algo)
 		ignore, lastJobFlush := job.SetFlush(lastJobFlush)
 		if err != nil {
 			log.Error("Error generating job", "err", err)

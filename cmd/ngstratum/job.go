@@ -21,15 +21,17 @@ type Job struct {
 	MainChainJob
 	heights   map[string]int64
 	auxChains []*AuxChainJob
+	algo      *service.Algo
 }
 
-func NewJobFromTemplates(templates map[TemplateKey][]byte) (*Job, error) {
+func NewJobFromTemplates(templates map[TemplateKey][]byte, algo *service.Algo) (*Job, error) {
 	var (
 		mainJobSet      bool
 		mainJobTemplate *BlockTemplate
 	)
 	job := Job{
 		heights: map[string]int64{},
+		algo:    algo,
 	}
 	for tmplKey, tmplRaw := range templates {
 		var tmpl BlockTemplate
@@ -182,7 +184,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 	coinbaseHash := hasher.Sum(nil)
 
 	header := j.GetBlockHeader(nonce, coinbaseHash)
-	headerHsh, err := j.currencyConfig.Algo.PoWHash(header)
+	headerHsh, err := j.algo.PoWHash(header)
 	if err != nil {
 		return nil, false, nil, err
 	}
@@ -204,7 +206,7 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 			data:           j.GetBlock(header, coinbase.Bytes()),
 			coinbaseHash:   coinbaseHash,
 			subsidyAddress: (*j.currencyConfig.BlockSubsidyAddress).String(),
-			powalgo:        j.currencyConfig.Algo.Name,
+			powalgo:        j.algo.Name,
 			subsidy:        j.subsidy,
 			height:         j.height,
 			powhash:        bigHsh,
