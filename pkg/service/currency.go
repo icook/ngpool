@@ -9,6 +9,7 @@ import (
 	log "github.com/inconshreveable/log15"
 	"github.com/mitchellh/mapstructure"
 	"os"
+	"strings"
 )
 
 // This is the structure for the config file represnetation of a "ChainConfig".
@@ -108,7 +109,7 @@ var RawCurrencyConfig map[string]interface{}
 // CurrencyConfig with ChainConfig structures
 func SetupCurrencies(rawConfig map[string]interface{}) {
 	RawCurrencyConfig = rawConfig
-	for _, rawConfig := range rawConfig {
+	for code, rawConfig := range rawConfig {
 		var config ChainConfigDecoder
 		err := mapstructure.Decode(rawConfig, &config)
 		if err != nil {
@@ -117,7 +118,7 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 		log.Debug("Decoded currency config", "config", config, "rawConfig", rawConfig)
 
 		params := &chaincfg.Params{
-			Name: config.Code,
+			Name: strings.ToUpper(code),
 			Net:  wire.BitcoinNet(config.NetMagic),
 		}
 

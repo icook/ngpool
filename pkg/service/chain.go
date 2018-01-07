@@ -3,6 +3,7 @@ package service
 import (
 	log "github.com/inconshreveable/log15"
 	"github.com/mitchellh/mapstructure"
+	"strings"
 )
 
 type ShareChainConfig struct {
@@ -17,8 +18,10 @@ var ShareChain = map[string]*ShareChainConfig{}
 
 func SetupShareChains(rawConfig map[string]interface{}) {
 	// TODO: Chain to array of maps, makes more sense
-	for _, rawConfig := range rawConfig {
-		var chain ShareChainConfig
+	for name, rawConfig := range rawConfig {
+		var chain = ShareChainConfig{
+			Name: strings.ToUpper(name),
+		}
 
 		err := mapstructure.Decode(rawConfig, &chain)
 		if err != nil {
