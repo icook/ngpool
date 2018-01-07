@@ -130,6 +130,16 @@ func mktmp(contents string) *os.File {
 	return tmpFile
 }
 
+func rmKey(etcdKeys client.KeysAPI, configKeyPath string) {
+	// Get current config
+	_, err := etcdKeys.Delete(context.Background(), configKeyPath, nil)
+	if err != nil {
+		log.Crit("Failed to rm key", "key", configKeyPath, "err", err)
+		os.Exit(1)
+	}
+	log.Info("Removed config", "keypath", configKeyPath)
+}
+
 func getKey(etcdKeys client.KeysAPI, configKeyPath string) string {
 	// Get current config
 	configResp, err := etcdKeys.Get(context.Background(), configKeyPath, nil)
@@ -151,11 +161,15 @@ func editKey(etcdKeys client.KeysAPI, configKeyPath string) {
 	if !save {
 		return
 	}
+	writeKey(etcdKeys, configKeyPath, newConfig)
+}
+
+func writeKey(etcdKeys client.KeysAPI, configKeyPath string, newConfig string) {
 	_, err := etcdKeys.Set(context.Background(), configKeyPath, newConfig, nil)
 	if err != nil {
 		log.Crit("Failed pushing config, dumping", "err", err)
 		fmt.Println(newConfig)
 		os.Exit(1)
 	}
-	log.Info("Successfully pushed config", "keypath", configKeyPath)
+	log.Info("Successfully wrote config", "keypath", configKeyPath)
 }

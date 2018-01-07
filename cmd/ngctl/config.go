@@ -112,5 +112,32 @@ func setupConfigCommands(cmd *cobra.Command, serviceType string) {
 
 			editKey(etcdKeys, configKeyPath)
 		}}
-	cmd.AddCommand(newCmd, editCmd, lsCmd)
+
+	var rmCmd = &cobra.Command{
+		Use:   "rm [name]",
+		Short: "Remove a service configuration",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			etcdKeys := getEtcdKeys()
+			name := args[0]
+			configKeyPath := "/config/" + serviceType + "/" + name
+			rmKey(etcdKeys, configKeyPath)
+		}}
+
+	var mvCmd = &cobra.Command{
+		Use:   "mv [name] [new_name]",
+		Short: "Change service name of a configuration",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			etcdKeys := getEtcdKeys()
+			name := args[0]
+			newName := args[1]
+			configKeyPath := "/config/" + serviceType + "/" + name
+			newConfigKeyPath := "/config/" + serviceType + "/" + newName
+			values := getKey(etcdKeys, configKeyPath)
+			writeKey(etcdKeys, newConfigKeyPath, values)
+			rmKey(etcdKeys, configKeyPath)
+		}}
+
+	cmd.AddCommand(newCmd, rmCmd, lsCmd, rmCmd, mvCmd, editCmd)
 }
