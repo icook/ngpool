@@ -62,6 +62,18 @@ type ChainConfigDecoder struct {
 	// the beginning of every message on bitcoin p2p networks, and is unique to
 	// the currency and network
 	NetMagic uint32
+
+	// A flag for whether the following group settings are relevant.
+	// Configuring these details allows the job generator to change the version
+	// bits in block headers for multi-algo currencies, allowing only a single
+	// coinserver to be required
+	MultiAlgo bool
+	// A map from algorithm name to integer identifier. Usually found in pureheader.h
+	MultiAlgoMap map[string]uint32
+	// The number of bits to shift the algo identifier into the version (0-31)
+	MultiAlgoBitShift uint32
+	// The bit width of the algo identifier in the version
+	MultiAlgoBitWidth uint32
 }
 
 // This encodes network rules and pool wide preferences for handling of that
@@ -72,6 +84,11 @@ type ChainConfig struct {
 	BlockMatureConfirms  int64
 	FlushAux             bool
 	PayoutTransactionFee int
+
+	MultiAlgo         bool
+	MultiAlgoMap      map[string]uint32
+	MultiAlgoBitShift uint32
+	MultiAlgoBitWidth uint32
 
 	Algo                *Algo
 	Params              *chaincfg.Params `json:"-"`
@@ -86,6 +103,11 @@ func (u *ChainConfig) MarshalJSON() ([]byte, error) {
 		FlushAux             bool   `json:"flush_aux"`
 		PayoutTransactionFee int    `json:"payout_transaction_fee"`
 
+		MultiAlgo         bool              `json:"multi_algo"`
+		MultiAlgoMap      map[string]uint32 `json:"multi_algo_map"`
+		MultiAlgoBitShift uint32            `json:"multi_algo_bit_shift"`
+		MultiAlgoBitWidth uint32            `json:"multi_algo_bit_width"`
+
 		Algo                string `json:"algo"`
 		BlockSubsidyAddress string `json:"block_subsidy_address"`
 		FeeAddress          string `json:"fee_address"`
@@ -95,8 +117,14 @@ func (u *ChainConfig) MarshalJSON() ([]byte, error) {
 		FlushAux:             u.FlushAux,
 		PayoutTransactionFee: u.PayoutTransactionFee,
 		Algo:                 u.Algo.Name,
-		BlockSubsidyAddress:  (*u.BlockSubsidyAddress).String(),
-		FeeAddress:           (*u.FeeAddress).String(),
+
+		MultiAlgo:         u.MultiAlgo,
+		MultiAlgoMap:      u.MultiAlgoMap,
+		MultiAlgoBitShift: u.MultiAlgoBitShift,
+		MultiAlgoBitWidth: u.MultiAlgoBitWidth,
+
+		BlockSubsidyAddress: (*u.BlockSubsidyAddress).String(),
+		FeeAddress:          (*u.FeeAddress).String(),
 	})
 }
 

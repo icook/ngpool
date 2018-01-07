@@ -46,7 +46,7 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte, algo *service.Algo) (
 
 		switch tmplKey.TemplateType {
 		case "getblocktemplate_aux":
-			auxChainJob, err := NewAuxChainJob(&tmpl, chainConfig)
+			auxChainJob, err := NewAuxChainJob(&tmpl, chainConfig, algo)
 			if err != nil {
 				return nil, err
 			}
@@ -57,7 +57,7 @@ func NewJobFromTemplates(templates map[TemplateKey][]byte, algo *service.Algo) (
 				return nil, errors.Errorf("You can only have one base currency template")
 			}
 			mainJobSet = true
-			mainChainJob, err := NewMainChainJob(&tmpl, chainConfig)
+			mainChainJob, err := NewMainChainJob(&tmpl, chainConfig, algo)
 			if err != nil {
 				return nil, err
 			}
@@ -254,7 +254,19 @@ type MainChainJob struct {
 	cleanJobs bool
 }
 
-func NewMainChainJob(tmpl *BlockTemplate, config *service.ChainConfig) (*MainChainJob, error) {
+func setAlgoVersion(version uint32, config *service.ChainConfig, algo *service.Algo) uint32 {
+	if config.MultiAlgo {
+		algoCode := config.MultiAlgoMap[algo.Name]
+		// Clear all algo bits
+		version &= ^uint32(((2 ^ config.MultiAlgoBitWidth) - 1) << config.MultiAlgoBitShift)
+		// Inject algo bits for desired algo
+		version |= (algoCode << config.MultiAlgoBitShift)
+	}
+	return version
+}
+
+func NewMainChainJob(tmpl *BlockTemplate, config *service.ChainConfig,
+	algo *service.Algo) (*MainChainJob, error) {
 	target, err := tmpl.getTarget()
 	if err != nil {
 		return nil, errors.Wrap(err, "Error generating target")
@@ -262,9 +274,10 @@ func NewMainChainJob(tmpl *BlockTemplate, config *service.ChainConfig) (*MainCha
 
 	encodedTime := make([]byte, 4)
 	binary.LittleEndian.PutUint32(encodedTime[0:], uint32(tmpl.CurTime))
-
 	encodedVersion := make([]byte, 4)
-	binary.LittleEndian.PutUint32(encodedVersion[0:], uint32(tmpl.Version))
+	version := uint32(tmpl.Version)
+	version = setAlgoVersion(version, config, algo)
+	binary.LittleEndian.PutUint32(encodedVersion[0:], version)
 
 	encodedPrevBlockHash, err := hex.DecodeString(tmpl.PreviousBlockhash)
 	if err != nil {
@@ -358,7 +371,8 @@ type AuxChainJob struct {
 	target                 *big.Int
 }
 
-func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxChainJob, error) {
+func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig,
+	algo *service.Algo) (*AuxChainJob, error) {
 	target, err := template.getTarget()
 	if err != nil {
 		return nil, errors.Wrap(err, "Error generating target")
@@ -370,6 +384,7 @@ func NewAuxChainJob(template *BlockTemplate, config *service.ChainConfig) (*AuxC
 	// Set flag for an AuxPoW block
 	version |= (1 << 8)
 	version |= (uint32(template.Extras.ChainID) << 16)
+	version = setAlgoVersion(version, config, algo)
 	binary.LittleEndian.PutUint32(encodedVersion[0:], version)
 	blkHeader.Write(encodedVersion)
 
