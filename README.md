@@ -110,10 +110,29 @@ root$ tar xvzf litecoin-0.14.2-x86_64-linux-gnu.tar.gz
 root$ cp litecoin-0.14.2/bin/litecoind /usr/local/bin/
 root$ cp litecoin-0.14.2/bin/litecoin-cli /usr/local/bin/
 
-# Generate a FeeAddress (where pool fees are paid to) and SubsidyAddress (where blocks are mined to) for the pool. Keep the private key somewhere safe if for production!!!
+# Generate a SubsidyAddress (where blocks are mined to) for the pool. Keep a backup of the private key somewhere safe if for production!!!
 root$ ngcoinserver genkey litecoind -n test
+```
 
-# Setup a basic common config. Replace the placeholder values with your own.
+Now write a simple keyfile for the payout signer to use. Ngpool separates
+signing of payouts to users so it can be run from a different machine.
+Currently there is no facility for encrypting this file.
+
+``` bash
+root$ nano keys.yaml
+```
+
+``` yaml
+LTC_T:
+    keys:
+        - [YOUR GENERATED PRIVATE KEY]
+```
+
+Setup a basic common config. This is configuration that all services use, like
+details about currency constants, etc. Replace the placeholder values with your
+own.
+
+``` bash 
 root$ ngctl common edit
 ```
 
@@ -129,8 +148,7 @@ ShareChains:
         algo: "scrypt"
 Currencies:
     "LTC_T":
-        subsidyAddress: "[YOUR SUBSIDY PUBLIC ADDRESS HERE]"
-        feeAddress: "[YOUR FEE PUBLIC ADDRESS HERE]"
+        subsidyAddress: "[YOUR GENERATED PUBLIC ADDRESS HERE]"
         powalgorithm: "scrypt"
         pubkeyaddrid: "6f"
         privkeyaddrid: "ef"
@@ -141,8 +159,9 @@ Currencies:
 
 ```
 
+Setup a stratum config
+
 ``` bash
-# Setup a stratum config
 root$ ngctl stratum edit 3333
 ```
 
@@ -155,8 +174,9 @@ basecurrency:
     templatetype: getblocktemplate
 ```
 
+Setup a coinserver config to run litcoind
+
 ``` bash
-# Setup a coinserver config
 root$ ngctl coinserver edit ltc1
 ```
 
@@ -183,4 +203,23 @@ Now you can run each component in their own terminal like such:
 ngstratum run 3333
 ngcoinserver run ltc1
 ngweb run
+```
+
+With a cpuminer you can begin mining blocks...
+
+``` bash
+minerd -a scrypt -o stratum+tcp://127.0.0.1:3333 -R 3 -D -u myusername
+```
+
+Once blocks are solved, run check their confirmations and generate credits to payout users.
+
+``` bash
+ngweb confirmblocks
+```
+
+And then send payouts. This script could be run from a different machine and
+target the public web API to perform payouts out of band.
+
+``` bash
+ngsign http://localhost:3000 keys
 ```
