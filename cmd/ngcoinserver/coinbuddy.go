@@ -92,6 +92,37 @@ func (c *CoinBuddy) Run() {
 		"endpoint":      fmt.Sprintf("http://%s/", c.config.GetString("EventListenerBind")),
 		"template_type": c.config.GetString("TemplateType"),
 	})
+	go c.updateStatus()
+}
+
+func (c *CoinBuddy) updateStatus() {
+	var ticker = time.NewTicker(time.Second * 30)
+	for {
+		select {
+		case <-ticker.C:
+			log.Info("Pusing blockchainInfo update")
+			resp, err := c.cs.client.RawRequest("getblockchaininfo", nil)
+			if err != nil {
+				log.Warn("Error fetching getblockchaininfo", "err", err)
+				continue
+			}
+			var blockchainInfo struct {
+				Chain                string  `json:"chain"`
+				Blocks               int64   `json:"blocks"`
+				Difficulty           float64 `json:"difficulty"`
+				BestBlockHash        string  `json:"bestblockhash"`
+				VerificationProgress float64 `json:"verificationprogress"`
+			}
+			err = json.Unmarshal(resp, &blockchainInfo)
+			if err != nil {
+				log.Warn("Error fetching getblockchaininfo", "err", err)
+				continue
+			}
+			c.service.PushStatus <- map[string]interface{}{
+				"getblockchaininfo": blockchainInfo,
+			}
+		}
+	}
 }
 
 // We assemble a byte string of extra data to put in the getblocktemplate call
