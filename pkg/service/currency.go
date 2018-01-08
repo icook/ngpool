@@ -41,8 +41,6 @@ type ChainConfigDecoder struct {
 
 	// The address to send newly mined coins
 	SubsidyAddress string
-	// The address to payout accumulated fees to
-	FeeAddress string
 	// The name of an algorithm. Current options are scrypt, sha256d, lyra2rev2, x17, argon2
 	PowAlgorithm string
 
@@ -93,7 +91,6 @@ type ChainConfig struct {
 	Algo                *Algo
 	Params              *chaincfg.Params `json:"-"`
 	BlockSubsidyAddress *btcutil.Address
-	FeeAddress          *btcutil.Address
 }
 
 func (u *ChainConfig) MarshalJSON() ([]byte, error) {
@@ -110,7 +107,6 @@ func (u *ChainConfig) MarshalJSON() ([]byte, error) {
 
 		Algo                string `json:"algo"`
 		BlockSubsidyAddress string `json:"block_subsidy_address"`
-		FeeAddress          string `json:"fee_address"`
 	}{
 		Code:                 u.Code,
 		BlockMatureConfirms:  u.BlockMatureConfirms,
@@ -124,7 +120,6 @@ func (u *ChainConfig) MarshalJSON() ([]byte, error) {
 		MultiAlgoBitWidth: u.MultiAlgoBitWidth,
 
 		BlockSubsidyAddress: (*u.BlockSubsidyAddress).String(),
-		FeeAddress:          (*u.FeeAddress).String(),
 	})
 }
 
@@ -176,11 +171,6 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 			os.Exit(1)
 		}
 
-		fa, err := btcutil.DecodeAddress(config.FeeAddress, params)
-		if err != nil {
-			panic(err)
-		}
-
 		if config.BlockMatureConfirms == 0 {
 			panic("You must specify a BlockMatureConfirms")
 		}
@@ -201,7 +191,6 @@ func SetupCurrencies(rawConfig map[string]interface{}) {
 
 			Params:              params,
 			BlockSubsidyAddress: &bsa,
-			FeeAddress:          &fa,
 			Algo:                AlgoConfig[config.PowAlgorithm],
 		}
 
