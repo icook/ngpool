@@ -100,7 +100,7 @@ func (c *CoinBuddy) updateStatus() {
 	for {
 		select {
 		case <-ticker.C:
-			log.Info("Pusing blockchainInfo update")
+			log.Debug("Pusing blockchainInfo update")
 			resp, err := c.cs.client.RawRequest("getblockchaininfo", nil)
 			if err != nil {
 				log.Warn("Error fetching getblockchaininfo", "err", err)
