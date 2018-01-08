@@ -63,3 +63,48 @@ Combined with the complexity of service interactions, lack of testing coverage
 lead to sluggish release intervals (lots of manual testing) as the codebase
 grew. Refactoring and improving many areas of code became "not worth the
 headache" because the manual testing required afterward.
+
+# Install
+
+This is basic documentation for setting up a basic pool on Ubuntu. From a root (sudo -s) prompt:
+
+``` bash
+# Install postgresql and other extras
+root$ apt-get update
+root$ apt-get install postgresql-9.6 git
+
+# We require at least etcd 2.2.6 because of a bugfix. Check officail repo version.  
+root$ apt-cache show etcd
+
+# If result of above not > 2.2.6, install from snap
+root$ apt-get install snapd
+root$ snap install etcd
+root$ cp /snap/etcd/current/etcd.conf.yml.sample /var/snap/etcd/common/etcd.conf.yml
+root$ snap start etcd
+
+# If etcd from repo is >2.2.6, just install it from the official repos
+root$ apt-get install etcd
+
+# Confirm etcd has started now. This should not error out
+root$ etcdctl ls
+
+# Create our postgresql user. Generate password with apg or similar secure generator
+root$ su - postgres
+postgres$ createuser --pwprompt ngpool  # enter password, don't loose it
+postgres$ createdb -O ngpool ngpool
+postgres$ <Ctrl-D>
+
+# Create a new user, disallow login from all sources
+root$ adduser ngpool
+root$ usermod --expiredate 1 ngpool
+root$ su - ngpool
+
+# Checkout the sourcecode to setup empty tables
+root$ git clone https://github.com/icook/ngpool.git
+root$ cd ngpool
+root$ psql -U ngpool -d ngpool -f sql/tables.sql   # enter your password for ngpool at the prompt
+
+# Create a new fee user on the database
+root$ 
+
+```
