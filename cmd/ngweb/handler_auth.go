@@ -122,8 +122,11 @@ func (q *NgWebAPI) postLogin(c *gin.Context) {
 		return
 	}
 	var user User
+	// We select >100000 to only allow login by user accounts, and not internal
+	// accounts
 	err = q.db.QueryRowx(
-		"SELECT id, username, password, tfa_enabled FROM users WHERE username = $1",
+		`SELECT id, username, password, tfa_enabled FROM users
+		WHERE username = $1 AND id >= 100000`,
 		req.Username).StructScan(&user)
 	if err != nil {
 		if err == sql.ErrNoRows {

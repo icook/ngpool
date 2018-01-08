@@ -56,9 +56,20 @@ CREATE TABLE block
         ON DELETE NO ACTION
 );
 
+-- We reserve the first 100,000 IDs for internal user accounts, such as fee user
+CREATE SEQUENCE internal_users_id_seq
+    INCREMENT 1
+    START 1
+    MINVALUE 1
+    MAXVALUE 99999;
+CREATE SEQUENCE users_id_seq
+    INCREMENT 1
+    START 100000
+    MINVALUE 100000
+    MAXVALUE 2147483647;
 CREATE TABLE users
 (
-    id SERIAL NOT NULL,
+    id integer NOT NULL DEFAULT nextval('users_id_seq'),
     username varchar,
     password varchar,
     email varchar,
@@ -134,4 +145,6 @@ CREATE TABLE credit
     CONSTRAINT credit_pkey PRIMARY KEY (id)
 );
 
-INSERT INTO users (id, username, password, email, verified_email, tfa_code, tfa_enabled) VALUES (1, 'fee', '$2a$06$pJF0DSl6M7pTjPv8hBTP1uL/lAe7UqHZl5gKc3QA02yRFV1oCTFum', 'fee@test.com', false, NULL, false);
+INSERT INTO users
+(id, username, password, verified_email, tfa_code, tfa_enabled)
+VALUES (1, 'fee', '', false, NULL, false);
