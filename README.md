@@ -138,6 +138,7 @@ root$ ngctl common edit
 
 ``` yaml
 api:
+    CORSAllowAll: true   # DO NOT RUN IN PRODUCTION!
     DbConnectionString: "user=ngpool dbname=ngpool sslmode=disable password=[YOUR DATABASE PASSWORD]"
 stratum:
     DbConnectionString: "user=ngpool dbname=ngpool sslmode=disable password=[YOUR DATABASE PASSWORD]"

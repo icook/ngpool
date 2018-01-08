@@ -7,12 +7,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/icook/btcd/rpcclient"
 	log "github.com/inconshreveable/log15"
-	"github.com/itsjamie/gin-cors"
 	"github.com/jmoiron/sqlx"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
@@ -70,6 +69,8 @@ func (q *NgWebAPI) ParseConfig() {
 	config.SetDefault("LogLevel", "info")
 	config.SetDefault("DbConnectionString",
 		"user=ngpool dbname=ngpool sslmode=disable password=knight")
+	config.SetDefault("CORSOrigins", []string{"http://localhost:3000/"})
+	config.SetDefault("CORSAllowAll", false)
 	q.config = config
 
 	// TODO: Check for secure JWTSecret
@@ -99,15 +100,14 @@ func (q *NgWebAPI) SetupGin() {
 	// Setup our database connection
 	// Configure webserver
 	r := gin.Default()
-	r.Use(cors.Middleware(cors.Config{
-		Origins:         "*",
-		Methods:         "GET, PUT, POST, DELETE",
-		RequestHeaders:  "Origin, Authorization, Content-Type",
-		ExposedHeaders:  "",
-		MaxAge:          50 * time.Second,
-		Credentials:     true,
-		ValidateHeaders: false,
-	}))
+	corsConfig := cors.DefaultConfig()
+	allowAll := q.config.GetBool("CORSAllowAll")
+	if allowAll {
+		corsConfig.AllowAllOrigins = true
+	} else {
+		corsConfig.AllowOrigins = q.config.GetStringSlice("CORSOrigins")
+	}
+	r.Use(cors.New(corsConfig))
 
 	r.POST("/v1/register", q.postRegister)
 	r.POST("/v1/login", q.postLogin)
