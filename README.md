@@ -99,12 +99,88 @@ root$ adduser ngpool
 root$ usermod --expiredate 1 ngpool
 root$ su - ngpool
 
-# Checkout the sourcecode to setup empty tables
-root$ git clone https://github.com/icook/ngpool.git
-root$ cd ngpool
-root$ psql -U ngpool -d ngpool -f sql/tables.sql   # enter your password for ngpool at the prompt
+# Download the latest release
+root$ wget <url of release targz>
+root$ tar xvzf ngpool.tar.gz
+root$ cp ngpool/* /usr/local/bin/
 
-# Create a new fee user on the database
-root$ 
+# Download litecoin, install litecoind and litecoin-cli
+root$ wget https://download.litecoin.org/litecoin-0.14.2/linux/litecoin-0.14.2-x86_64-linux-gnu.tar.gz
+root$ tar xvzf litecoin-0.14.2-x86_64-linux-gnu.tar.gz
+root$ cp litecoin-0.14.2/bin/litecoind /usr/local/bin/
+root$ cp litecoin-0.14.2/bin/litecoin-cli /usr/local/bin/
 
+# Generate a FeeAddress (where pool fees are paid to) and SubsidyAddress (where blocks are mined to) for the pool. Keep the private key somewhere safe if for production!!!
+root$ ngcoinserver genkey litecoind -n test
+
+# Setup a basic common config. Replace the placeholder values with your own.
+root$ ngctl common edit
+```
+
+``` yaml
+api:
+    DbConnectionString: "user=ngpool dbname=ngpool sslmode=disable password=[YOUR DATABASE PASSWORD]"
+stratum:
+    DbConnectionString: "user=ngpool dbname=ngpool sslmode=disable password=[YOUR DATABASE PASSWORD]"
+ShareChains:
+    "LTC_T":
+        fee: 0.01
+        payoutmethod: "pplns"
+        algo: "scrypt"
+Currencies:
+    "LTC_T":
+        subsidyAddress: "[YOUR SUBSIDY PUBLIC ADDRESS HERE]"
+        feeAddress: "[YOUR FEE PUBLIC ADDRESS HERE]"
+        powalgorithm: "scrypt"
+        pubkeyaddrid: "6f"
+        privkeyaddrid: "ef"
+        netmagic: 0xfdd2c8f1
+        blockmatureconfirms: 100
+        payouttransactionfee: 110
+        minimumrelayfee: 100000
+
+```
+
+``` bash
+# Setup a stratum config
+root$ ngctl stratum edit 3333
+```
+
+``` yaml
+loglevel: info
+sharechainname: LTC_T
+basecurrency:
+    currency: LTC_T
+    algo: scrypt
+    templatetype: getblocktemplate
+```
+
+``` bash
+# Setup a coinserver config
+root$ ngctl coinserver edit ltc1
+```
+
+``` yaml
+blocklistenerbind: 127.0.0.1:3010
+coinserverbinary: litecoind
+currencycode: LTC_T
+eventlistenerbind: 127.0.0.1:4010
+hashingalgo: scrypt
+loglevel: info
+nodeconfig:
+  port: "19010"
+  rpcpassword: "123"
+  rpcport: "19011"
+  rpcuser: admin1
+  server: "1"
+  testnet: "1"
+  datadir: "~/.litecoin"
+```
+
+Now you can run each component in their own terminal like such:
+
+``` bash
+ngstratum run 3333
+ngcoinserver run ltc1
+ngweb run
 ```
