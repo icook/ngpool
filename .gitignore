@@ -4,6 +4,7 @@ vendor/*
 /ngcoinserver
 /ngstratum
 /ngweb
+/cmd/ngweb/bindata.go
 /ngsign
 *.yaml
 gin-bin

@@ -230,18 +230,22 @@ func projectBase() string {
 
 func (q *NgWebAPI) LoadFixtures(fixtures ...string) {
 	for _, fileName := range fixtures {
-		file, err := ioutil.ReadFile(filepath.Join(projectBase(), "sql", fileName) + ".sql")
+		sql, err := ioutil.ReadFile(filepath.Join(projectBase(), "sql", fileName) + ".sql")
 		if err != nil {
 			panic(err)
 		}
-		commands := strings.Split(string(file), ";")
+		q.mustRunSQL(sql)
+	}
+}
 
-		for _, command := range commands {
-			_, err := q.db.Exec(command)
-			if err != nil {
-				q.log.Crit("Failed to exec", "sql", command)
-				panic(err)
-			}
+func (q *NgWebAPI) mustRunSQL(sql []byte) {
+	commands := strings.Split(string(sql), ";")
+
+	for _, command := range commands {
+		_, err := q.db.Exec(command)
+		if err != nil {
+			q.log.Crit("Failed to exec", "sql", command)
+			panic(err)
 		}
 	}
 }
