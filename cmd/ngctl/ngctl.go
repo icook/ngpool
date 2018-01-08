@@ -28,7 +28,7 @@ var endpoints []string
 
 func init() {
 	RootCmd.PersistentFlags().StringSliceVar(
-		&endpoints, "endpoints", []string{"http://127.0.0.1:2379"}, "gRPC endpoints")
+		&endpoints, "endpoints", []string{"http://127.0.0.1:4001", "http://127.0.0.1:2379"}, "gRPC endpoints")
 }
 
 func getDefaultConfig(serviceType string) string {
