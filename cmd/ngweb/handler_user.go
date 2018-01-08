@@ -9,7 +9,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
 	"github.com/gin-gonic/gin"
@@ -247,14 +246,14 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 		ID      int
 		UserID  int `db:"user_id"`
 		Amount  int64
-		Address string
+		Address *string
 	}
 	var credits []Credit
 	err := q.db.Select(&credits,
 		`SELECT credit.id, credit.user_id, credit.amount, payout_address.address
 		FROM credit LEFT JOIN payout_address ON
 		credit.user_id = payout_address.user_id AND payout_address.currency = $1
-		WHERE credit.currency = $2 AND payout_address.address IS NOT NULL
+		WHERE credit.currency = $2 AND (payout_address.address IS NOT NULL OR credit.user_id = 1)
 		AND credit.payout_transaction IS NULL`, currency, currency)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
@@ -266,25 +265,29 @@ func (q *NgWebAPI) getCreatePayout(c *gin.Context) {
 	}
 	var maps = map[int]*common.PayoutMap{}
 	var totalPayout int64 = 0
-	defaultNet := &chaincfg.MainNetParams
 	for _, credit := range credits {
 		// Add to a datastructure to pass to signer that provides metadata for
 		// an output
 		pm, ok := maps[credit.UserID]
 		if !ok {
-			// Add to our list of Outputs
-			addr, err := btcutil.DecodeAddress(credit.Address, defaultNet)
-			// TODO: consider handling this more elegantly by ignoring invalid addresses
-			if err != nil {
-				q.apiException(c, 500, errors.WithStack(err), APIError{
-					Code:  "invalid_address",
-					Title: "One or more payout addresses are invalid"})
-				return
+			var address btcutil.Address
+			if credit.Address == nil {
+				address = *config.FeeAddress
+			} else {
+				// Add to our list of Outputs
+				address, err = btcutil.DecodeAddress(*credit.Address, config.Params)
+				// TODO: handle this more elegantly by ignoring invalid addresses
+				if err != nil {
+					q.apiException(c, 500, errors.WithStack(err), APIError{
+						Code:  "invalid_address",
+						Title: "One or more payout addresses are invalid"})
+					return
+				}
 			}
 			pm = &common.PayoutMap{
 				UserID:     credit.UserID,
-				Address:    credit.Address,
-				AddressObj: addr,
+				Address:    address.EncodeAddress(),
+				AddressObj: address,
 			}
 			maps[credit.UserID] = pm
 		}
