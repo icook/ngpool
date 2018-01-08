@@ -63,6 +63,12 @@
   revision = "31079b6807923eb23992c421b114992b95131b55"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/chzyer/readline"
+  packages = ["."]
+  revision = "f6d7a1f6fbf35bbf9beb80dc63c56a29dcfb759f"
+
+[[projects]]
   name = "github.com/coreos/etcd"
   packages = ["client","pkg/pathutil","pkg/srv","pkg/types","version"]
   revision = "694728c496e22dfa5719c78ff23cc982e15bcb2f"
@@ -202,6 +208,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/juju/ansiterm"
+  packages = [".","tabwriter"]
+  revision = "35c59b9e0fe275705a71bf5d58ee293f27efbbc4"
+
+[[projects]]
+  branch = "master"
   name = "github.com/lann/builder"
   packages = ["."]
   revision = "f22ce00fd9394014049dad11c244859432bd6820"
@@ -225,10 +237,22 @@
   revision = "83612a56d3dd153a94a629cd64925371c9adad78"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/lunixbochs/vtclean"
+  packages = ["."]
+  revision = "d14193dfc626125c831501c1c42340b4248e1f5a"
+
+[[projects]]
   name = "github.com/magiconair/properties"
   packages = ["."]
   revision = "be5ece7dd465ab0765a9682137865547526d1dfb"
   version = "v1.7.3"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/manifoldco/promptui"
+  packages = [".","list","screenbuf"]
+  revision = "4baa1188b83a2bbddbbc4745baf85aec26edb526"
 
 [[projects]]
   name = "github.com/mattn/go-colorable"
@@ -401,6 +425,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "58ffde16f2b57797357d00a3dd216321ff7a7a1284d1fdf62455052b1a735227"
+  inputs-digest = "3cb4ed4009f808c2d531743be99e0acb9cb3a869064b9183f61c65838d7de33b"
   solver-name = "gps-cdcl"
   solver-version = 1

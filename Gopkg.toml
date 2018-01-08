@@ -22,6 +22,10 @@
 
 [[constraint]]
   branch = "master"
+  name = "github.com/manifoldco/promptui"
+
+[[constraint]]
+  branch = "master"
   name = "github.com/btcsuite/btcd"
   source = "https://github.com/icook/btcd.git"
 
