@@ -126,7 +126,7 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 	for _, sc := range sharechains {
 		sc.SubsidyFee = int64(sc.config.Fee * float64(sc.Subsidy))
 		sc.SubsidyPayable = sc.Subsidy - sc.SubsidyFee
-		fmt.Printf("%+v\n", sc)
+
 		var credits []*CreditMap
 		switch sc.config.PayoutMethod {
 		case "pplns":
@@ -134,6 +134,8 @@ func (q *NgWebAPI) processBlock(block *payoutBlock) error {
 			if err != nil {
 				return err
 			}
+		default:
+			return errors.New("Invalid payout method during payout!")
 		}
 		for _, c := range credits {
 			q.log.Info("Inserting credit", "credit", c, "sc", sc.Name, "block", block)
@@ -192,11 +194,10 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	var n float64 = 2
 	sharesToFind *= n
 	// Static fee user id, needs to be configurable as well
-	feeUserID := 1
 	q.log.Info("Calculated required shares",
 		"accuracy", acc, "requiredShares", sharesToFind, "target", block.Target, "diff1", block.algoConfig.ShareDiff1)
 
-	userShares, total, err := q.collectShares(sharesToFind, feeUserID, sc.Name, block.MinedAt)
+	userShares, total, err := q.collectShares(sharesToFind, sc.Name, block.MinedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +213,20 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	var credits []*CreditMap
 	for userID, shares := range userShares {
 		fract := shares / total
+		amount := int64(float64(sc.SubsidyPayable) * fract)
+		if userID == 1 {
+			amount += sc.SubsidyFee
+		}
+		// A fee percentage of 0 will often create empty fee entries, so we
+		// must check to ensure we don't create empty credits which break
+		// things later on
+		if amount <= 0 {
+			continue
+		}
 		c := &CreditMap{
 			UserID:     userID,
 			Difficulty: shares,
-			Amount:     int64(float64(sc.SubsidyPayable) * fract),
+			Amount:     amount,
 			Fee:        float64(sc.SubsidyFee) * fract,
 		}
 		fmt.Printf("%+v\n", c)
@@ -224,11 +235,13 @@ func (q *NgWebAPI) payoutPPLNS(sc *ShareChainPayout, block *payoutBlock) ([]*Cre
 	return credits, nil
 }
 
-func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
-	shareChainName string, start time.Time) (map[int]float64, float64, error) {
+func (q *NgWebAPI) collectShares(shareCount float64, shareChainName string,
+	start time.Time) (map[int]float64, float64, error) {
+	// Our userShares map always has an entry for the fee user, to ensure a
+	// credit is always generated for them
 	var (
 		accumulatedShares float64 = 0
-		userShares                = map[int]float64{}
+		userShares                = map[int]float64{1: 0}
 		selectOffset              = 0
 	)
 	type Share struct {
@@ -255,10 +268,13 @@ func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
 		for _, share := range shares {
 			// If we couldn't match a user from the share, give it to the fee
 			// user
+			var userID int
 			if share.UserID == nil {
-				share.UserID = &feeUserID
+				userID = 1
+			} else {
+				userID = *share.UserID
 			}
-			userShares[*share.UserID] += share.Difficulty
+			userShares[userID] += share.Difficulty
 
 			// Exit if we have the amount of shares we need
 			accumulatedShares += share.Difficulty
@@ -275,6 +291,7 @@ func (q *NgWebAPI) collectShares(shareCount float64, feeUserID int,
 
 func (q *NgWebAPI) GenerateCredits() error {
 	var blocks []payoutBlock
+	// TODO: This for update isn't implemented in a transaction, so it does nothing
 	err := q.db.Select(&blocks,
 		`SELECT currency, height, hash, powalgo, subsidy, mined_at, target
 		FROM block WHERE status = 'mature' AND credited = false FOR UPDATE`)
