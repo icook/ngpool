@@ -2,7 +2,7 @@ CREATE TABLE share
 (
     username varchar NOT NULL,
     difficulty double precision NOT NULL,
-    mined_at timestamp NOT NULL,
+    mined_at timestamp with time zone NOT NULL,
     sharechain varchar NOT NULL,
     currencies varchar[] NOT NULL
 );
@@ -12,7 +12,7 @@ CREATE TABLE minute_share
 (
     cat varchar NOT NULL,
     key varchar NOT NULL,
-    minute timestamp NOT NULL,
+    minute timestamp with time zone NOT NULL,
     difficulty double precision NOT NULL,
     shares integer NOT NULL,
 
@@ -43,7 +43,7 @@ CREATE TABLE block
     coinbase_hash varchar NOT NULL,
     powhash varchar NOT NULL,
     subsidy numeric NOT NULL,
-    mined_at timestamp NOT NULL,
+    mined_at timestamp with time zone NOT NULL,
     mined_by varchar NOT NULL,
     target double precision NOT NULL,
     status block_status DEFAULT 'immature' NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE payout_transaction
 (
     hash varchar NOT NULL,
     currency varchar,
-    sent timestamp,
+    sent timestamp with time zone,
     signed_tx bytea NOT NULL,
     confirmed boolean NOT NULL DEFAULT false,
     CONSTRAINT payout_transaction_pkey PRIMARY KEY (hash)

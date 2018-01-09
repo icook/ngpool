@@ -140,7 +140,6 @@ func (q *NgWebAPI) getMinuteShares(c *gin.Context) {
 		base = base.Where(sq.Eq{"key": key})
 	}
 	qstring, args, err := base.ToSql()
-	q.log.Info("q", "q", qstring)
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
 		return
