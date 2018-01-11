@@ -1,0 +1,47 @@
+builds:
+  - binary: ngctl
+    main: ./cmd/ngctl/
+    ldflags: -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+    hooks:
+      post: upx dist/linuxamd64/ngctl
+  - binary: ngstratum
+    main: ./cmd/ngstratum/
+    ldflags: -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+    hooks:
+      post: upx dist/linuxamd64/ngstratum
+  - binary: ngcoinserver
+    main: ./cmd/ngcoinserver/
+    ldflags: -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+    hooks:
+      post: upx dist/linuxamd64/ngcoinserver
+  - binary: ngsign
+    main: ./cmd/ngsign
+    ldflags: -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+    hooks:
+      post: upx dist/linuxamd64/ngsign
+  - binary: ngweb
+    main: ./cmd/ngweb
+    ldflags: -s -w
+    goos:
+      - linux
+    goarch:
+      - amd64
+    hooks:
+      pre: go-bindata -o cmd/ngweb/bindata.go ./sql/
+      post: upx dist/linuxamd64/ngweb

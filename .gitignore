@@ -6,5 +6,6 @@ vendor/*
 /ngweb
 /cmd/ngweb/bindata.go
 /ngsign
+/dist
 *.yaml
 gin-bin
