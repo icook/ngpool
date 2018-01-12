@@ -125,7 +125,7 @@ func (c *CoinBuddy) updateStatus() {
 		var networkInfo struct {
 			Version         int    `json:"version"`
 			Subversion      string `json:"subversion"`
-			ProtocolVersion int    `json:"procotolversion"`
+			ProtocolVersion int    `json:"protocolversion"`
 			NetworkActive   bool   `json:"networkactive"`
 			Connections     int    `json:"connections"`
 			Warnings        string `json:"warning"`
