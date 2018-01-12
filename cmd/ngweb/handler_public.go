@@ -139,6 +139,24 @@ func (q *NgWebAPI) getMinuteShares(c *gin.Context) {
 	if key := c.Param("key"); key != "" {
 		base = base.Where(sq.Eq{"key": key})
 	}
+	if startRaw, ok := c.GetQuery("start"); ok && startRaw != "" {
+		startInt, err := strconv.Atoi(startRaw)
+		if err != nil {
+			q.apiError(c, 404, APIError{Code: "invalid_start"})
+			return
+		}
+		start := time.Unix(int64(startInt), 0)
+		base = base.Where(sq.GtOrEq{"minute": start})
+	}
+	if endRaw, ok := c.GetQuery("end"); ok && endRaw != "" {
+		endInt, err := strconv.Atoi(endRaw)
+		if err != nil {
+			q.apiError(c, 404, APIError{Code: "invalid_end"})
+			return
+		}
+		end := time.Unix(int64(endInt), 0)
+		base = base.Where(sq.LtOrEq{"minute": end})
+	}
 	qstring, args, err := base.ToSql()
 	if err != nil {
 		q.apiException(c, 500, errors.WithStack(err), SQLError)
