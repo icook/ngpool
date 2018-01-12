@@ -118,8 +118,29 @@ func (c *CoinBuddy) updateStatus() {
 				log.Warn("Error fetching getblockchaininfo", "err", err)
 				continue
 			}
+
+			resp, err = c.cs.client.RawRequest("getnetworkinfo", nil)
+			if err != nil {
+				log.Warn("Error fetching getnetworkinfo", "err", err)
+				continue
+			}
+			var networkInfo struct {
+				Version         int    `json:"version"`
+				Subversion      string `json:"subversion"`
+				ProtocolVersion int    `json:"procotolversion"`
+				NetworkActive   bool   `json:"networkactive"`
+				Connections     int    `json:"connections"`
+				Warnings        string `json:"warning"`
+			}
+			err = json.Unmarshal(resp, &networkInfo)
+			if err != nil {
+				log.Warn("Error fetching getnetworkinfo", "err", err)
+				continue
+			}
+
 			c.service.PushStatus <- map[string]interface{}{
 				"getblockchaininfo": blockchainInfo,
+				"getnetworkinfo":    networkInfo,
 			}
 		}
 	}
