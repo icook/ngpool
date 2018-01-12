@@ -7,11 +7,11 @@ import (
 )
 
 type ShareChainConfig struct {
-	Name         string
-	PayoutMethod string
-	Fee          float64
-	AlgoName     string `mapstructure:"algo"`
-	Algo         *Algo  `mapstructure:"-"`
+	Name         string  `json:"name"`
+	PayoutMethod string  `json:"payout_method"`
+	Fee          float64 `json:"fee"`
+	AlgoName     string  `mapstructure:"algo" json:"algo"`
+	Algo         *Algo   `mapstructure:"-" json:"-"`
 }
 
 var ShareChain = map[string]*ShareChainConfig{}

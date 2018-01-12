@@ -112,6 +112,7 @@ func (q *NgWebAPI) getBlock(c *gin.Context) {
 func (q *NgWebAPI) getCommon(c *gin.Context) {
 	q.apiSuccess(c, 200, res{
 		"raw_currencies": service.RawCurrencyConfig,
+		"sharechains":    service.ShareChain,
 		"currencies":     service.CurrencyConfig,
 		"algos":          service.AlgoConfig,
 	})
