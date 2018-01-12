@@ -94,7 +94,7 @@ func (c *StratumClient) Start() {
 
 // Handle calculating a users difficulty and push a write if it's changed
 func (c *StratumClient) updateDiff() error {
-	rate := c.shareWindow.SampleRateMinute()
+	rate := c.shareWindow.RateMinute()
 	newDiff := c.vardiff.ComputeNew(c.diff, rate)
 	if c.diff == newDiff {
 		return nil

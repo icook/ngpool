@@ -26,11 +26,11 @@ func NewVarDiff(min float64, max float64, target float64) *VarDiff {
 	}
 }
 
-func (v *VarDiff) ComputeNew(currentDiff float64, submissionRate float64) float64 {
+func (v *VarDiff) ComputeNew(currentDiff float64, shareRate float64) float64 {
 	if len(v.tiers) == 1 {
 		return v.tiers[1]
 	}
-	idealNew := (submissionRate / v.targetSubmissionRate) * currentDiff
+	idealNew := shareRate / v.targetSubmissionRate
 	var smallestDiff = math.Inf(1)
 	var newDiff float64
 	for _, tier := range v.tiers {
