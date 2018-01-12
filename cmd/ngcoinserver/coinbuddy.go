@@ -97,52 +97,54 @@ func (c *CoinBuddy) Run() {
 
 func (c *CoinBuddy) updateStatus() {
 	var ticker = time.NewTicker(time.Second * 30)
-	for {
-		select {
-		case <-ticker.C:
-			log.Debug("Pusing blockchainInfo update")
-			resp, err := c.cs.client.RawRequest("getblockchaininfo", nil)
-			if err != nil {
-				log.Warn("Error fetching getblockchaininfo", "err", err)
-				continue
-			}
-			var blockchainInfo struct {
-				Chain                string  `json:"chain"`
-				Blocks               int64   `json:"blocks"`
-				Difficulty           float64 `json:"difficulty"`
-				BestBlockHash        string  `json:"bestblockhash"`
-				VerificationProgress float64 `json:"verificationprogress"`
-			}
-			err = json.Unmarshal(resp, &blockchainInfo)
-			if err != nil {
-				log.Warn("Error fetching getblockchaininfo", "err", err)
-				continue
-			}
-
-			resp, err = c.cs.client.RawRequest("getnetworkinfo", nil)
-			if err != nil {
-				log.Warn("Error fetching getnetworkinfo", "err", err)
-				continue
-			}
-			var networkInfo struct {
-				Version         int    `json:"version"`
-				Subversion      string `json:"subversion"`
-				ProtocolVersion int    `json:"procotolversion"`
-				NetworkActive   bool   `json:"networkactive"`
-				Connections     int    `json:"connections"`
-				Warnings        string `json:"warning"`
-			}
-			err = json.Unmarshal(resp, &networkInfo)
-			if err != nil {
-				log.Warn("Error fetching getnetworkinfo", "err", err)
-				continue
-			}
-
-			c.service.PushStatus <- map[string]interface{}{
-				"getblockchaininfo": blockchainInfo,
-				"getnetworkinfo":    networkInfo,
-			}
+	update := func() {
+		log.Debug("Pusing blockchainInfo update")
+		resp, err := c.cs.client.RawRequest("getblockchaininfo", nil)
+		if err != nil {
+			log.Warn("Error fetching getblockchaininfo", "err", err)
+			return
 		}
+		var blockchainInfo struct {
+			Chain                string  `json:"chain"`
+			Blocks               int64   `json:"blocks"`
+			Difficulty           float64 `json:"difficulty"`
+			BestBlockHash        string  `json:"bestblockhash"`
+			VerificationProgress float64 `json:"verificationprogress"`
+		}
+		err = json.Unmarshal(resp, &blockchainInfo)
+		if err != nil {
+			log.Warn("Error fetching getblockchaininfo", "err", err)
+			return
+		}
+
+		resp, err = c.cs.client.RawRequest("getnetworkinfo", nil)
+		if err != nil {
+			log.Warn("Error fetching getnetworkinfo", "err", err)
+			return
+		}
+		var networkInfo struct {
+			Version         int    `json:"version"`
+			Subversion      string `json:"subversion"`
+			ProtocolVersion int    `json:"procotolversion"`
+			NetworkActive   bool   `json:"networkactive"`
+			Connections     int    `json:"connections"`
+			Warnings        string `json:"warning"`
+		}
+		err = json.Unmarshal(resp, &networkInfo)
+		if err != nil {
+			log.Warn("Error fetching getnetworkinfo", "err", err)
+			return
+		}
+
+		c.service.PushStatus <- map[string]interface{}{
+			"getblockchaininfo": blockchainInfo,
+			"getnetworkinfo":    networkInfo,
+		}
+	}
+	update() // Don't wait to do first update
+	for {
+		<-ticker.C
+		update()
 	}
 }
 
