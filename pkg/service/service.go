@@ -119,6 +119,7 @@ func (s *Service) loadServices(namespace string) (map[string]*ServiceStatus, uin
 		if err != nil {
 			return nil, 0, err
 		}
+		return nil, 0, nil
 	} else if err != nil {
 		return nil, 0, err
 	} else {
