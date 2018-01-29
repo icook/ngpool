@@ -10,7 +10,10 @@
 [[projects]]
   branch = "master"
   name = "github.com/aead/skein"
-  packages = [".","threefish"]
+  packages = [
+    ".",
+    "threefish"
+  ]
   revision = "9365ae6e95d294dc113a0b308852f97c916db233"
 
 [[projects]]
@@ -22,19 +25,35 @@
 [[projects]]
   branch = "master"
   name = "github.com/bitgoin/lyra2rev2"
-  packages = [".","sha3"]
+  packages = [
+    ".",
+    "sha3"
+  ]
   revision = "bae9ad2043bb55facb14c4918e909f88a7d3ed84"
 
 [[projects]]
   name = "github.com/boombuler/barcode"
-  packages = [".","qr","utils"]
+  packages = [
+    ".",
+    "qr",
+    "utils"
+  ]
   revision = "3cfea5ab600ae37946be2b763b8ec2c1cf2d272d"
   version = "v1.0.0"
 
 [[projects]]
   branch = "master"
   name = "github.com/btcsuite/btcd"
-  packages = ["blockchain","btcec","btcjson","chaincfg","chaincfg/chainhash","database","txscript","wire"]
+  packages = [
+    "blockchain",
+    "btcec",
+    "btcjson",
+    "chaincfg",
+    "chaincfg/chainhash",
+    "database",
+    "txscript",
+    "wire"
+  ]
   revision = "9ce12b73c180b5b9d3f296d20c2af39fd8b09967"
   source = "https://github.com/icook/btcd.git"
 
@@ -47,7 +66,11 @@
 [[projects]]
   branch = "master"
   name = "github.com/btcsuite/btcutil"
-  packages = [".","base58","bech32"]
+  packages = [
+    ".",
+    "base58",
+    "bech32"
+  ]
   revision = "501929d3d046174c3d39f0ea54ece471aa17238c"
 
 [[projects]]
@@ -70,7 +93,13 @@
 
 [[projects]]
   name = "github.com/coreos/etcd"
-  packages = ["client","pkg/pathutil","pkg/srv","pkg/types","version"]
+  packages = [
+    "client",
+    "pkg/pathutil",
+    "pkg/srv",
+    "pkg/types",
+    "version"
+  ]
   revision = "694728c496e22dfa5719c78ff23cc982e15bcb2f"
   version = "v3.2.10"
 
@@ -124,13 +153,20 @@
 
 [[projects]]
   name = "github.com/gin-gonic/gin"
-  packages = [".","binding","render"]
+  packages = [
+    ".",
+    "binding",
+    "render"
+  ]
   revision = "d459835d2b077e44f7c9b453505ee29881d5d12d"
   version = "v1.2"
 
 [[projects]]
   name = "github.com/go-playground/locales"
-  packages = [".","currency"]
+  packages = [
+    ".",
+    "currency"
+  ]
   revision = "e4cbcb5d0652150d40ad0646651076b6bd2be4f6"
   version = "v0.11.2"
 
@@ -161,7 +197,17 @@
 [[projects]]
   branch = "master"
   name = "github.com/hashicorp/hcl"
-  packages = [".","hcl/ast","hcl/parser","hcl/scanner","hcl/strconv","hcl/token","json/parser","json/scanner","json/token"]
+  packages = [
+    ".",
+    "hcl/ast",
+    "hcl/parser",
+    "hcl/scanner",
+    "hcl/strconv",
+    "hcl/token",
+    "json/parser",
+    "json/scanner",
+    "json/token"
+  ]
   revision = "23c074d0eceb2b8a5bfdbb271ab780cde70f05a8"
 
 [[projects]]
@@ -203,13 +249,20 @@
 [[projects]]
   branch = "master"
   name = "github.com/jmoiron/sqlx"
-  packages = [".","reflectx","types"]
+  packages = [
+    ".",
+    "reflectx",
+    "types"
+  ]
   revision = "99f3ad6d85ae53d0fecf788ab62d0e9734b3c117"
 
 [[projects]]
   branch = "master"
   name = "github.com/juju/ansiterm"
-  packages = [".","tabwriter"]
+  packages = [
+    ".",
+    "tabwriter"
+  ]
   revision = "35c59b9e0fe275705a71bf5d58ee293f27efbbc4"
 
 [[projects]]
@@ -233,7 +286,10 @@
 [[projects]]
   branch = "master"
   name = "github.com/lib/pq"
-  packages = [".","oid"]
+  packages = [
+    ".",
+    "oid"
+  ]
   revision = "83612a56d3dd153a94a629cd64925371c9adad78"
 
 [[projects]]
@@ -250,8 +306,18 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/majestrate/cryptonight"
+  packages = ["."]
+  revision = "92e76a038d3d4178a414868428edb112abefc823"
+
+[[projects]]
+  branch = "master"
   name = "github.com/manifoldco/promptui"
-  packages = [".","list","screenbuf"]
+  packages = [
+    ".",
+    "list",
+    "screenbuf"
+  ]
   revision = "4baa1188b83a2bbddbbc4745baf85aec26edb526"
 
 [[projects]]
@@ -298,7 +364,11 @@
 
 [[projects]]
   name = "github.com/pquerna/otp"
-  packages = [".","hotp","totp"]
+  packages = [
+    ".",
+    "hotp",
+    "totp"
+  ]
   revision = "b7b89250c468c06871d3837bee02e2d5c155ae19"
   version = "v1.0.0"
 
@@ -328,7 +398,10 @@
 
 [[projects]]
   name = "github.com/spf13/afero"
-  packages = [".","mem"]
+  packages = [
+    ".",
+    "mem"
+  ]
   revision = "8d919cbe7e2627e417f3e45c3c0e489a5b7e2536"
   version = "v1.0.0"
 
@@ -358,7 +431,10 @@
 
 [[projects]]
   name = "github.com/spf13/viper"
-  packages = [".","remote"]
+  packages = [
+    ".",
+    "remote"
+  ]
   revision = "25b30aa063fc18e48662b86996252eabdcf2f0c7"
   version = "v1.0.0"
 
@@ -377,19 +453,42 @@
 [[projects]]
   branch = "master"
   name = "github.com/xordataexchange/crypt"
-  packages = ["backend","backend/consul","backend/etcd","config","encoding/secconf"]
+  packages = [
+    "backend",
+    "backend/consul",
+    "backend/etcd",
+    "config",
+    "encoding/secconf"
+  ]
   revision = "b2862e3d0a775f18c7cfe02273500ae307b61218"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
-  packages = ["bcrypt","blowfish","cast5","openpgp","openpgp/armor","openpgp/elgamal","openpgp/errors","openpgp/packet","openpgp/s2k","pbkdf2","ripemd160","scrypt"]
+  packages = [
+    "bcrypt",
+    "blowfish",
+    "cast5",
+    "openpgp",
+    "openpgp/armor",
+    "openpgp/elgamal",
+    "openpgp/errors",
+    "openpgp/packet",
+    "openpgp/s2k",
+    "pbkdf2",
+    "ripemd160",
+    "scrypt"
+  ]
   revision = "94eea52f7b742c7cbe0b03b22f0c4c8631ece122"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
-  packages = ["context","idna","publicsuffix"]
+  packages = [
+    "context",
+    "idna",
+    "publicsuffix"
+  ]
   revision = "a8b9294777976932365dabb6640cf1468d95c70f"
 
 [[projects]]
@@ -401,7 +500,22 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/text"
-  packages = ["collate","collate/build","internal/colltab","internal/gen","internal/tag","internal/triegen","internal/ucd","language","secure/bidirule","transform","unicode/bidi","unicode/cldr","unicode/norm","unicode/rangetable"]
+  packages = [
+    "collate",
+    "collate/build",
+    "internal/colltab",
+    "internal/gen",
+    "internal/tag",
+    "internal/triegen",
+    "internal/ucd",
+    "language",
+    "secure/bidirule",
+    "transform",
+    "unicode/bidi",
+    "unicode/cldr",
+    "unicode/norm",
+    "unicode/rangetable"
+  ]
   revision = "75cc3cad82b5f47d3fb229ddda8c5167da14f294"
 
 [[projects]]
@@ -425,6 +539,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3cb4ed4009f808c2d531743be99e0acb9cb3a869064b9183f61c65838d7de33b"
+  inputs-digest = "23a8f202d67febbf0a6daad0992d0637c93a316a3909f5b359d7847a47d4077b"
   solver-name = "gps-cdcl"
   solver-version = 1

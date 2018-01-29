@@ -6,11 +6,18 @@ import (
 
 	"github.com/bitgoin/lyra2rev2"
 	"github.com/icook/powalgo-go"
+	"github.com/majestrate/cryptonight"
+	// "github.com/sammy007/go-equihash"
 	"github.com/seehuhn/sha256d"
 	"golang.org/x/crypto/scrypt"
 )
 
 type HashFunc func(input []byte) ([]byte, error)
+
+func cryptonightHash(input []byte) ([]byte, error) {
+	res := cryptonight.HashBytes(input)
+	return res[:], nil
+}
 
 func scryptHash(input []byte) ([]byte, error) {
 	return scrypt.Key(input, input, 1024, 1, 1, 32)
@@ -102,6 +109,18 @@ func init() {
 		"argon2",
 		"0000ffff00000000000000000000000000000000000000000000000000000000",
 		powalgo.Argon2Hash,
+		0xFFFF,
+	)
+	// NewAlgoConfig(
+	// 	"equihash",
+	// 	"0000ffff00000000000000000000000000000000000000000000000000000000",
+	// 	equihash.Verify,
+	// 	0xFFFF,
+	// )
+	NewAlgoConfig(
+		"cryptonight",
+		"0000ffff00000000000000000000000000000000000000000000000000000000",
+		cryptonightHash,
 		0xFFFF,
 	)
 }
