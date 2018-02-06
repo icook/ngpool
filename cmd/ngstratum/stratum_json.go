@@ -85,9 +85,9 @@ func DecodeMiningAuthorize(raw interface{}) (*MiningAuthorize, error) {
 
 type MiningSubmit struct {
 	Username    string
-	JobID       string `json:"job_id"`
-	Extranonce2 []byte `json:"job_id"`
-	Time        []byte `json:"ntime"`
+	JobID       string
+	Extranonce2 []byte
+	Time        []byte
 	Nonce       []byte
 
 	// Hacky, but we put the StratumMessage ID on here for easy replying from
@@ -138,4 +138,33 @@ func DecodeMiningSubmit(raw interface{}) (*MiningSubmit, error) {
 		ma.Nonce = out
 	}
 	return &ma, nil
+}
+
+// JSON RPC 2.0 -------------------------------------
+
+type Stratum2Response struct {
+	ID      *int64      `json:"id"`
+	JSONRPC string      `json:"jsonrpc"`
+	Result  interface{} `json:"result"`
+	Error   interface{} `json:"error"`
+}
+
+type Stratum2Message struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+	Params  interface{} `json:"params"`
+}
+
+type Login struct {
+	Login string
+	Pass  string
+	Agent string
+}
+
+// {"id": "52fdfc07", "job_id": "2182654f", "nonce": "21000000", "result": "726b7baca682d535a540c65d84ed74385014d3a5f404828eedeb656c0b7b2053"}
+type MiningSubmit2 struct {
+	ID     string
+	JobID  string `mapstructure:"job_id"`
+	Nonce  string
+	Result string
 }

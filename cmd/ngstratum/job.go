@@ -153,6 +153,27 @@ func (j *Job) SetFlush(lastJobSetFlush interface{}) (bool, interface{}) {
 	return false, j.heights
 }
 
+func (j *Job) GetStratum2Params(extranonce1 []byte) (map[string]interface{}, error) {
+	coinbase := bytes.Buffer{}
+	coinbase.Write(j.coinbase1)
+	coinbase.Write(extranonce1)
+	// Empty bytes to fill in user selected extranonce2. Easier to do this than
+	// conditionally change extranonce placeholder for jsonrpc 2, since users
+	// don't pick extranonces in jsonrpc 2 (XMR)
+	coinbase.Write([]byte{0, 0, 0, 0})
+	coinbase.Write(j.coinbase2)
+
+	var hasher = sha256d.New()
+	hasher.Write(coinbase.Bytes())
+	coinbaseHash := hasher.Sum(nil)
+
+	header := j.GetBlockHeader([]byte{0, 0, 0, 0}, coinbaseHash)
+
+	return map[string]interface{}{
+		"blob": hex.EncodeToString(header[:76]),
+	}, nil
+}
+
 func (j *Job) GetStratumParams() ([]interface{}, error) {
 	var mb = []string{}
 	for _, b := range j.merkleBranch {

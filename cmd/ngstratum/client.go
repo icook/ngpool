@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -11,9 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/dustin/go-broadcast"
 	log "github.com/inconshreveable/log15"
-	_ "github.com/spf13/viper/remote"
+	"github.com/mitchellh/mapstructure"
 
 	"github.com/icook/ngpool/pkg/common"
 )
@@ -22,10 +25,16 @@ type StratumClient struct {
 	id string
 
 	// State information
-	attrs      map[string]string
-	username   string
-	worker     string
-	subscribed bool
+	attrs       map[string]string
+	username    string
+	worker      string
+	subscribed  bool
+	rpcVersion2 bool
+	// This is a horrible hack. We need to push a job in the response to the
+	// login command, and to comply we need to respond with the appropriate ID.
+	// The ID of login command gets stored here temporarily since we have to
+	// wait for a job to be pushed and handle the response as a special case
+	loginMsgID int64
 	diff       float64
 
 	write       chan []byte
@@ -53,6 +62,7 @@ func init() {
 
 func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share, vardiff *VarDiff) *StratumClient {
 	sc := &StratumClient{
+		rpcVersion2: false,
 		subscribed:  false,
 		conn:        conn,
 		id:          randomString(),
@@ -101,10 +111,13 @@ func (c *StratumClient) updateDiff() error {
 	}
 	c.log.Info("Moving to new diff", "diff", newDiff, "rate", rate)
 	c.diff = newDiff
-	return c.send(&StratumMessage{
-		Method: "mining.set_difficulty",
-		Params: []float64{c.diff},
-	})
+	if !c.rpcVersion2 {
+		return c.send(&StratumMessage{
+			Method: "mining.set_difficulty",
+			Params: []float64{c.diff},
+		})
+	}
+	return nil
 }
 
 type ClientJob struct {
@@ -230,25 +243,92 @@ func (c *StratumClient) writeLoop() {
 				submissionMap: make(map[string]bool),
 			}
 
-			params, err := newJob.GetStratumParams()
-			if err != nil {
-				c.log.Error("Failed to get stratum params", "err", err)
-				continue
-			}
-			params = append([]interface{}{jid}, params...)
+			if c.rpcVersion2 {
+				params, err := newJob.GetStratum2Params(c.Extranonce1())
+				if err != nil {
+					c.log.Error("Failed to get stratum params", "err", err)
+					continue
+				}
+				targetFl := big.Float{}
+				targetFl.SetFloat64(c.diff)
+				targetFl.Mul(&diff1, &targetFl)
+				target, _ := targetFl.Int(&big.Int{})
 
-			err = c.send(&StratumMessage{
-				Method: "mining.notify",
-				Params: params,
-			})
-			if err != nil {
-				c.log.Error("Failed write response", "err", err)
-				return
+				rawCompact := blockchain.BigToCompact(target)
+				targetBytes := make([]byte, 4)
+				binary.BigEndian.PutUint32(targetBytes, rawCompact)
+				params["target"] = hex.EncodeToString(targetBytes)
+				params["job_id"] = jid
+
+				if !c.subscribed {
+					c.subscribed = true
+					err = c.send(&Stratum2Response{
+						ID:      &c.loginMsgID,
+						JSONRPC: "2.0",
+						Result: map[string]interface{}{
+							"id":     c.id,
+							"status": "OK",
+							"job":    params,
+						}})
+					if err != nil {
+						c.log.Error("Failed write response", "err", err)
+						return
+					}
+				} else {
+					err = c.send(&Stratum2Message{
+						JSONRPC: "2.0",
+						Method:  "job",
+						Params:  params,
+					})
+					if err != nil {
+						c.log.Error("Failed write response", "err", err)
+						return
+					}
+				}
+			} else {
+				params, err := newJob.GetStratumParams()
+				if err != nil {
+					c.log.Error("Failed to get stratum params", "err", err)
+					continue
+				}
+				params = append([]interface{}{jid}, params...)
+
+				err = c.send(&StratumMessage{
+					Method: "mining.notify",
+					Params: params,
+				})
+				if err != nil {
+					c.log.Error("Failed write response", "err", err)
+					return
+				}
 			}
 		}
 	}
 
 }
+
+func (c *StratumClient) authorize() {
+	c.updateDiff()
+	c.log.Debug("Subscribing to jobs")
+	c.jobCast.Register(c.jobListener)
+	// Start the time window for hashrate average right now
+	c.shareWindow.Add(0)
+}
+
+func parseUser(input string) (string, string) {
+	// We ignore passwords. Trim worker name just in case
+	var username, worker string
+	if len(input) > 65 {
+		input = input[:65]
+	}
+	parts := strings.SplitN(input, ".", 2)
+	if len(parts) == 2 {
+		worker = parts[1]
+	}
+	username = parts[0]
+	return username, worker
+}
+
 func (c *StratumClient) readLoop() {
 	defer c.Stop()
 
@@ -267,7 +347,10 @@ func (c *StratumClient) readLoop() {
 		var msg StratumMessage
 		err = json.Unmarshal(raw, &msg)
 		if err != nil {
-			c.log.Warn("Error unmarshaling", "err", err)
+			if bytes.TrimSpace(raw) == nil {
+				continue
+			}
+			c.log.Warn("Error unmarshaling", "err", err, "content", string(raw))
 			c.sendError(nil, StratumErrorOther)
 			continue
 		}
@@ -317,15 +400,7 @@ func (c *StratumClient) readLoop() {
 				c.sendError(msg.ID, StratumErrorOther)
 				continue
 			}
-			// We ignore passwords. Trim worker name just in case
-			if len(ma.Username) > 65 {
-				ma.Username = ma.Username[:65]
-			}
-			parts := strings.SplitN(ma.Username, ".", 2)
-			if len(parts) == 2 {
-				c.worker = parts[1]
-			}
-			c.username = parts[0]
+			c.username, c.worker = parseUser(ma.Username)
 			err = c.send(&StratumResponse{
 				ID:     msg.ID,
 				Result: true,
@@ -334,11 +409,7 @@ func (c *StratumClient) readLoop() {
 				c.log.Error("Failed write response", "err", err)
 				return
 			}
-			c.updateDiff()
-			c.log.Debug("Subscribing to jobs")
-			c.jobCast.Register(c.jobListener)
-			// Start the time window for hashrate average right now
-			c.shareWindow.Add(0)
+			c.authorize()
 		case "mining.submit":
 			if !c.subscribed {
 				c.sendError(msg.ID, StratumErrorNotSubbed)
@@ -351,6 +422,34 @@ func (c *StratumClient) readLoop() {
 			}
 			ms.ID = msg.ID
 			c.submit <- ms
+		// JSON RPC 2.0 -------------------------------------
+		case "submit":
+			var ms2 MiningSubmit2
+			err := mapstructure.Decode(msg.Params, &ms2)
+			if err != nil {
+				c.sendError(msg.ID, StratumErrorOther)
+				continue
+			}
+
+			nonce, _ := hex.DecodeString(ms2.Nonce)
+			ms := &MiningSubmit{
+				JobID:       ms2.JobID,
+				Nonce:       nonce,
+				Extranonce2: []byte{0, 0, 0, 0},
+			}
+			c.submit <- ms
+		case "login":
+			c.rpcVersion2 = true
+			c.loginMsgID = *msg.ID
+			var login Login
+			err := mapstructure.Decode(msg.Params, &login)
+			if err != nil {
+				c.sendError(msg.ID, StratumErrorOther)
+				continue
+			}
+			c.username, c.worker = parseUser(login.Login)
+			c.attrs["useragent"] = login.Agent
+			c.authorize()
 		default:
 			c.log.Warn("Invalid message method", "method", msg.Method)
 		}
