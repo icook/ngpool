@@ -48,16 +48,9 @@ type StratumClient struct {
 	conn        net.Conn
 }
 
-var diff1 = big.Float{}
 var XMRdiff1 = big.Int{}
 
 func init() {
-	_, _, err := diff1.Parse(
-		"0000ffff00000000000000000000000000000000000000000000000000000000", 16)
-	if err != nil {
-		panic(err)
-	}
-
 	XMRdiff1.SetString(
 		"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 0)
 }
@@ -202,10 +195,9 @@ func (c *StratumClient) writeLoop() {
 			// Generate combined extranonce and diff target
 			extranonce := append(c.Extranonce1(), submission.Extranonce2...)
 
-			// TODO: Use the diff1 from algo configuration
 			targetFl := big.Float{}
 			targetFl.SetFloat64(clientJob.difficulty)
-			targetFl.Mul(&diff1, &targetFl)
+			targetFl.Mul(clientJob.job.algo.ShareDiff1, &targetFl)
 			target, _ := targetFl.Int(&big.Int{})
 			blocks, validShare, currencies, err := job.CheckSolves(
 				submission.Nonce, extranonce, target)
