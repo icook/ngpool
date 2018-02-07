@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -13,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/blockchain"
 	"github.com/dustin/go-broadcast"
 	log "github.com/inconshreveable/log15"
 	"github.com/mitchellh/mapstructure"
@@ -51,6 +49,7 @@ type StratumClient struct {
 }
 
 var diff1 = big.Float{}
+var XMRdiff1 = big.Int{}
 
 func init() {
 	_, _, err := diff1.Parse(
@@ -58,6 +57,9 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	XMRdiff1.SetString(
+		"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 0)
 }
 
 func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share, vardiff *VarDiff) *StratumClient {
@@ -140,6 +142,18 @@ func (c *StratumClient) status() common.StratumClientStatus {
 		c.worker,
 		c.diff,
 	}
+}
+
+// Taken directly from https://github.com/sammy007/monero-stratum/util/util.go
+// All original copyrights apply
+func GetTargetHex(diff int64) string {
+	padded := make([]byte, 32)
+	diffBuff := new(big.Int).Div(&XMRdiff1, big.NewInt(diff)).Bytes()
+	copy(padded[32-len(diffBuff):], diffBuff)
+	buff := padded[0:4]
+	common.ReverseBytes(buff)
+	targetHex := hex.EncodeToString(buff)
+	return targetHex
 }
 
 func (c *StratumClient) writeLoop() {
@@ -249,15 +263,7 @@ func (c *StratumClient) writeLoop() {
 					c.log.Error("Failed to get stratum params", "err", err)
 					continue
 				}
-				targetFl := big.Float{}
-				targetFl.SetFloat64(c.diff)
-				targetFl.Mul(&diff1, &targetFl)
-				target, _ := targetFl.Int(&big.Int{})
-
-				rawCompact := blockchain.BigToCompact(target)
-				targetBytes := make([]byte, 4)
-				binary.BigEndian.PutUint32(targetBytes, rawCompact)
-				params["target"] = hex.EncodeToString(targetBytes)
+				params["target"] = GetTargetHex(int64(c.diff))
 				params["job_id"] = jid
 
 				if !c.subscribed {
