@@ -448,6 +448,9 @@ func (c *StratumClient) readLoop() {
 			c.username, c.worker = parseUser(login.Login)
 			c.attrs["useragent"] = login.Agent
 			c.authorize()
+		case "mining.extranonce.subscribe":
+			// Signal that we do not support this method
+			c.sendError(msg.ID, StratumErrorOther)
 		default:
 			c.log.Warn("Invalid message method", "method", msg.Method)
 		}
