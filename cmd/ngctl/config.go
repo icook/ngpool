@@ -113,6 +113,29 @@ func setupConfigCommands(cmd *cobra.Command, serviceType string) {
 			editKey(etcdKeys, configKeyPath)
 		}}
 
+	var cloneCmd = &cobra.Command{
+		Use:   "clone [source] [new]",
+		Short: "Creates a new service config from previous",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			etcdKeys := getEtcdKeys()
+			configKeyPath := "/config/" + serviceType + "/" + args[0]
+			values := getKey(etcdKeys, configKeyPath)
+
+			keyPath := "/config/" + serviceType + "/" + args[1]
+			newConfig, save := modifyLoop(values, keyPath)
+			if !save {
+				return
+			}
+			_, err := etcdKeys.Set(
+				context.Background(), keyPath, newConfig, nil)
+			if err != nil {
+				log.Crit("Failed pushing config", "err", err)
+				os.Exit(1)
+			}
+			log.Info("Successfully pushed config", "keypath", keyPath)
+		}}
+
 	var rmCmd = &cobra.Command{
 		Use:   "rm [name]",
 		Short: "Remove a service configuration",
@@ -139,5 +162,5 @@ func setupConfigCommands(cmd *cobra.Command, serviceType string) {
 			rmKey(etcdKeys, configKeyPath)
 		}}
 
-	cmd.AddCommand(newCmd, rmCmd, lsCmd, rmCmd, mvCmd, editCmd)
+	cmd.AddCommand(newCmd, rmCmd, lsCmd, mvCmd, editCmd, cloneCmd)
 }
