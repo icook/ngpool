@@ -362,7 +362,13 @@ func (n *StratumServer) Miner() {
 			var nonce = make([]byte, 4)
 			binary.BigEndian.PutUint32(nonce, i)
 
-			solves, _, _, err := job.CheckSolves(nonce, extraNonceMagic, nil)
+			es := ExtranonceSolve{
+				nonce:       nonce,
+				nTime:       job.time,
+				extraNonce1: extraNonceMagic[:4],
+				extraNonce2: extraNonceMagic[4:],
+			}
+			solves, _, _, err := job.CheckSolves(es, nil)
 			if err != nil {
 				log.Warn("Failed to check solves for job", "err", err)
 			}
@@ -546,7 +552,7 @@ func (n *StratumServer) ListenMiners() {
 			log.Warn("Failed to accept connection", "err", err)
 			continue
 		}
-		client := NewClient(conn, n.jobCast, n.newShare, n.vardiff)
+		client := NewClient(conn, n.jobCast, n.newShare, n.vardiff, n.shareChain.Algo)
 		client.Start()
 		n.newClient <- client
 	}

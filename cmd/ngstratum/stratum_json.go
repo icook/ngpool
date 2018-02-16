@@ -96,11 +96,6 @@ type MiningSubmit struct {
 	ID *int64
 }
 
-func (m *MiningSubmit) GetKey() string {
-	// Generates a unique string for identifying duplicate shares
-	return m.JobID + string(m.Extranonce2) + string(m.Time) + string(m.Nonce)
-}
-
 func DecodeMiningSubmit(raw interface{}) (*MiningSubmit, error) {
 	params, ok := raw.([]interface{})
 	if !ok {
@@ -167,4 +162,52 @@ type MiningSubmit2 struct {
 	JobID  string `mapstructure:"job_id"`
 	Nonce  string
 	Result string
+}
+
+// Documented in https://github.com/slushpool/poclbm-zcash/wiki/Stratum-protocol-changes-for-ZCash
+type MiningSubmitZcash struct {
+	Username string
+	JobID    string
+	Time     []byte
+	Nonce2   []byte
+	Solution []byte
+}
+
+func DecodeMiningSubmitZcash(raw interface{}) (*MiningSubmitZcash, error) {
+	params, ok := raw.([]interface{})
+	if !ok {
+		return nil, errors.New("Non array passed")
+	}
+	ma := MiningSubmitZcash{}
+	if len(params) != 5 {
+		return nil, errors.New("Submit must have 5 fields")
+	}
+	if username, ok := params[0].(string); ok {
+		ma.Username = username
+	}
+	if jobID, ok := params[1].(string); ok {
+		ma.JobID = jobID
+	}
+	if time, ok := params[2].(string); ok {
+		out, err := hex.DecodeString(time)
+		if err != nil {
+			return nil, err
+		}
+		ma.Time = out
+	}
+	if nonce, ok := params[3].(string); ok {
+		out, err := hex.DecodeString(nonce)
+		if err != nil {
+			return nil, err
+		}
+		ma.Nonce2 = out
+	}
+	if solution, ok := params[4].(string); ok {
+		out, err := hex.DecodeString(solution)
+		if err != nil {
+			return nil, err
+		}
+		ma.Solution = out
+	}
+	return &ma, nil
 }

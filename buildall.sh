@@ -1,4 +1,5 @@
 #!/bin/bash -x
+export CGO_CFLAGS_ALLOW=".*"
 go-bindata -o cmd/ngweb/bindata.go ./sql/
 go build ./cmd/ngsign
 go build ./cmd/ngstratum

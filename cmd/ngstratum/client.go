@@ -17,6 +17,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/icook/ngpool/pkg/common"
+	"github.com/icook/ngpool/pkg/service"
 )
 
 type StratumClient struct {
@@ -29,17 +30,19 @@ type StratumClient struct {
 	subscribed  bool
 	rpcVersion2 bool
 	// This is a horrible hack. We need to push a job in the response to the
-	// login command, and to comply we need to respond with the appropriate ID.
-	// The ID of login command gets stored here temporarily since we have to
-	// wait for a job to be pushed and handle the response as a special case
+	// login command, and to comply to standards we need to respond with the
+	// appropriate ID. The ID of login command gets stored here temporarily
+	// since we have to wait for a job to be pushed and handle the response as
+	// a special case
 	loginMsgID int64
 	diff       float64
 
 	write       chan []byte
 	jobListener chan interface{}
+	algo        *service.Algo
 	jobCast     broadcast.Broadcaster
 	newShare    chan *Share
-	submit      chan *MiningSubmit
+	submit      chan *SubmitWrapper
 	vardiff     *VarDiff
 	shutdown    chan interface{}
 	hasShutdown bool
@@ -55,7 +58,7 @@ func init() {
 		"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 0)
 }
 
-func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share, vardiff *VarDiff) *StratumClient {
+func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Share, vardiff *VarDiff, algo *service.Algo) *StratumClient {
 	sc := &StratumClient{
 		rpcVersion2: false,
 		subscribed:  false,
@@ -65,11 +68,12 @@ func NewClient(conn net.Conn, jobCast broadcast.Broadcaster, newShare chan *Shar
 		jobCast:     jobCast,
 		jobListener: make(chan interface{}),
 		shutdown:    make(chan interface{}),
-		submit:      make(chan *MiningSubmit),
+		submit:      make(chan *SubmitWrapper),
 		vardiff:     vardiff,
 		write:       make(chan []byte, 10),
 		newShare:    newShare,
 		shareWindow: common.NewWindow(50),
+		algo:        algo,
 	}
 	sc.log = log.New("clientid", sc.id)
 	return sc
@@ -106,7 +110,13 @@ func (c *StratumClient) updateDiff() error {
 	}
 	c.log.Info("Moving to new diff", "diff", newDiff, "rate", rate)
 	c.diff = newDiff
-	if !c.rpcVersion2 {
+	if c.algo.Name == "equihash" {
+		target := getTargetHex(int64(c.diff))
+		return c.send(&StratumMessage{
+			Method: "mining.set_target",
+			Params: []interface{}{target},
+		})
+	} else if !c.rpcVersion2 {
 		return c.send(&StratumMessage{
 			Method: "mining.set_difficulty",
 			Params: []float64{c.diff},
@@ -139,7 +149,7 @@ func (c *StratumClient) status() common.StratumClientStatus {
 
 // Taken directly from https://github.com/sammy007/monero-stratum/util/util.go
 // All original copyrights apply
-func GetTargetHex(diff int64) string {
+func getTargetHexShort(diff int64) string {
 	padded := make([]byte, 32)
 	diffBuff := new(big.Int).Div(&XMRdiff1, big.NewInt(diff)).Bytes()
 	copy(padded[32-len(diffBuff):], diffBuff)
@@ -147,6 +157,26 @@ func GetTargetHex(diff int64) string {
 	common.ReverseBytes(buff)
 	targetHex := hex.EncodeToString(buff)
 	return targetHex
+}
+
+func getTargetHex(diff int64) string {
+	padded := make([]byte, 32)
+	diffBuff := new(big.Int).Div(&XMRdiff1, big.NewInt(diff)).Bytes()
+	copy(padded[32-len(diffBuff):], diffBuff)
+	common.ReverseBytes(padded)
+	targetHex := hex.EncodeToString(padded)
+	return targetHex
+}
+
+type SolveData interface {
+	// Generates a unique string for identifying duplicate shares
+	GetKey() string
+}
+
+type SubmitWrapper struct {
+	JobID     string
+	MessageID *int64
+	SolveData SolveData
 }
 
 func (c *StratumClient) writeLoop() {
@@ -157,7 +187,6 @@ func (c *StratumClient) writeLoop() {
 	var resp []byte
 	var raw interface{}
 	var ticker = time.NewTicker(time.Second * 60)
-	var submission *MiningSubmit
 	for {
 		select {
 		case <-c.shutdown:
@@ -175,41 +204,37 @@ func (c *StratumClient) writeLoop() {
 			c.updateDiff()
 		// Job listener won't recieve jobs until mining.authorize in the read
 		// loop
-		case submission = <-c.submit:
-			if submission == nil {
-				c.log.Error("Got nil on submit channel")
-				return
-			}
+		case submission := <-c.submit:
 			clientJob, ok := jobBook[submission.JobID]
 			if !ok {
-				c.sendError(submission.ID, StratumErrorStale)
+				c.sendError(submission.MessageID, StratumErrorStale)
 				continue
 			}
-			submissionKey := submission.GetKey()
+			submissionKey := submission.SolveData.GetKey()
 			if _, ok := clientJob.submissionMap[submissionKey]; ok {
-				c.sendError(submission.ID, StratumErrorDuplicate)
+				c.sendError(submission.MessageID, StratumErrorDuplicate)
 				continue
 			}
 			job := clientJob.job
 
-			// Generate combined extranonce and diff target
-			extranonce := append(c.Extranonce1(), submission.Extranonce2...)
+			var algo = clientJob.job.algo
 
+			// Compute the share target
 			targetFl := big.Float{}
 			targetFl.SetFloat64(clientJob.difficulty)
-			targetFl.Mul(clientJob.job.algo.ShareDiff1, &targetFl)
+			targetFl.Mul(algo.ShareDiff1, &targetFl)
 			target, _ := targetFl.Int(&big.Int{})
+
 			blocks, validShare, currencies, err := job.CheckSolves(
-				submission.Nonce, extranonce, target)
+				submission.SolveData, target)
 			if err != nil {
 				c.log.Warn("Unexpected error CheckSolves", "job", clientJob)
-				c.sendError(submission.ID, StratumErrorOther)
+				c.sendError(submission.MessageID, StratumErrorOther)
 				continue
 			}
-			err = nil
 			if validShare {
-				err = c.send(&StratumResponse{
-					ID:     submission.ID,
+				err := c.send(&StratumResponse{
+					ID:     submission.MessageID,
 					Result: true,
 				})
 				if err != nil {
@@ -217,7 +242,7 @@ func (c *StratumClient) writeLoop() {
 					return
 				}
 			} else {
-				c.sendError(submission.ID, StratumErrorLowDiff)
+				c.sendError(submission.MessageID, StratumErrorLowDiff)
 				continue
 			}
 			clientJob.submissionMap[submissionKey] = true
@@ -233,7 +258,7 @@ func (c *StratumClient) writeLoop() {
 
 		case raw = <-c.jobListener:
 			if raw == nil {
-				c.log.Debug("Closing job listener")
+				c.log.Debug("Closing job listener", "job", raw)
 				return
 			}
 			newJob, ok := raw.(*Job)
@@ -255,7 +280,7 @@ func (c *StratumClient) writeLoop() {
 					c.log.Error("Failed to get stratum params", "err", err)
 					continue
 				}
-				params["target"] = GetTargetHex(int64(c.diff))
+				params["target"] = getTargetHexShort(int64(c.diff))
 				params["job_id"] = jid
 
 				if !c.subscribed {
@@ -284,14 +309,24 @@ func (c *StratumClient) writeLoop() {
 					}
 				}
 			} else {
-				params, err := newJob.GetStratumParams()
-				if err != nil {
-					c.log.Error("Failed to get stratum params", "err", err)
-					continue
+				var params []interface{}
+				if newJob.algo.Name == "equihash" {
+					paramsInj, err := newJob.GetZCashStratumParams()
+					if err != nil {
+						c.log.Error("Failed to get stratum params", "err", err)
+						continue
+					}
+					params = append([]interface{}{jid}, paramsInj...)
+				} else {
+					paramsInj, err := newJob.GetStratumParams()
+					if err != nil {
+						c.log.Error("Failed to get stratum params", "err", err)
+						continue
+					}
+					params = append([]interface{}{jid}, paramsInj...)
 				}
-				params = append([]interface{}{jid}, params...)
 
-				err = c.send(&StratumMessage{
+				err := c.send(&StratumMessage{
 					Method: "mining.notify",
 					Params: params,
 				})
@@ -413,13 +448,34 @@ func (c *StratumClient) readLoop() {
 				c.sendError(msg.ID, StratumErrorNotSubbed)
 				continue
 			}
-			ms, err := DecodeMiningSubmit(msg.Params)
+			if c.algo.Name == "equihash" {
+				ms, _ := DecodeMiningSubmitZcash(msg.Params)
+				c.submit <- &SubmitWrapper{
+					SolveData: SolutionSolve{
+						nonce1:   c.Extranonce1(),
+						nonce2:   ms.Nonce2,
+						nTime:    ms.Time,
+						solution: ms.Solution,
+					},
+					MessageID: msg.ID,
+					JobID:     ms.JobID,
+				}
+			} else {
+				ms, _ := DecodeMiningSubmit(msg.Params)
+				c.submit <- &SubmitWrapper{
+					SolveData: ExtranonceSolve{
+						extraNonce1: c.Extranonce1(),
+						extraNonce2: ms.Extranonce2,
+						nonce:       ms.Nonce,
+					},
+					MessageID: msg.ID,
+					JobID:     ms.JobID,
+				}
+			}
 			if err != nil {
 				c.sendError(msg.ID, StratumErrorOther)
 				continue
 			}
-			ms.ID = msg.ID
-			c.submit <- ms
 		// JSON RPC 2.0 -------------------------------------
 		case "submit":
 			var ms2 MiningSubmit2
@@ -430,12 +486,15 @@ func (c *StratumClient) readLoop() {
 			}
 
 			nonce, _ := hex.DecodeString(ms2.Nonce)
-			ms := &MiningSubmit{
-				JobID:       ms2.JobID,
-				Nonce:       nonce,
-				Extranonce2: []byte{0, 0, 0, 0},
+			c.submit <- &SubmitWrapper{
+				SolveData: ExtranonceSolve{
+					extraNonce1: c.Extranonce1(),
+					extraNonce2: []byte{0, 0, 0, 0},
+					nonce:       nonce,
+				},
+				MessageID: msg.ID,
+				JobID:     ms2.JobID,
 			}
-			c.submit <- ms
 		case "login":
 			c.rpcVersion2 = true
 			c.loginMsgID = *msg.ID

@@ -111,12 +111,12 @@ func init() {
 		powalgo.Argon2Hash,
 		0xFFFF,
 	)
-	// NewAlgoConfig(
-	// 	"equihash",
-	// 	"0000ffff00000000000000000000000000000000000000000000000000000000",
-	// 	equihash.Verify,
-	// 	0xFFFF,
-	// )
+	NewAlgoConfig(
+		"equihash",
+		"0000ffff00000000000000000000000000000000000000000000000000000000",
+		sha256dHash,
+		0xFFFF,
+	)
 	NewAlgoConfig(
 		"cryptonight",
 		"0000ffff00000000000000000000000000000000000000000000000000000000",

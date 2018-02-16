@@ -174,6 +174,39 @@ func (j *Job) GetStratum2Params(extranonce1 []byte) (map[string]interface{}, err
 	}, nil
 }
 
+func (j *Job) GetZCashStratumParams() ([]interface{}, error) {
+	coinbase := bytes.Buffer{}
+	coinbase.Write(j.coinbase1)
+	// Empty bytes to fill in user selected extranonce2. Easier to do this than
+	// conditionally change extranonce placeholder for zcash
+	coinbase.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+	coinbase.Write(j.coinbase2)
+
+	var hasher = sha256d.New()
+	hasher.Write(coinbase.Bytes())
+	coinbaseHash := hasher.Sum(nil)
+
+	// Hash the coinbase, then walk down the merkle branch to get merkle root
+	rootHash := coinbaseHash
+
+	for _, branch := range j.merkleBranch {
+		hasher.Write(rootHash)
+		hasher.Write(branch)
+		rootHash = hasher.Sum(nil)
+		hasher.Reset()
+	}
+
+	return []interface{}{
+		hex.EncodeToString(j.version),
+		hex.EncodeToString(j.prevBlockHash),
+		hex.EncodeToString(rootHash),
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		hex.EncodeToString(j.time),
+		hex.EncodeToString(j.bits),
+		j.cleanJobs,
+	}, nil
+}
+
 func (j *Job) GetStratumParams() ([]interface{}, error) {
 	var mb = []string{}
 	for _, b := range j.merkleBranch {
@@ -191,20 +224,129 @@ func (j *Job) GetStratumParams() ([]interface{}, error) {
 	}, nil
 }
 
-func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int) (map[string]*BlockSolve, bool, []string, error) {
+// This solve type is for equihash, which takes a different format than regular
+// stratum submissions
+type SolutionSolve struct {
+	nonce2   []byte
+	nTime    []byte
+	nonce1   []byte
+	solution []byte
+}
+
+func (m SolutionSolve) GetKey() string {
+	return string(m.nonce2) + string(m.solution) + string(m.nTime)
+}
+
+func (j *Job) checkSolSolve(solveData SolutionSolve, shareTarget *big.Int) (map[string]*BlockSolve, bool, []string, error) {
 	var ret = map[string]*BlockSolve{}
 	var validShare = false
 
 	coinbase := bytes.Buffer{}
 	coinbase.Write(j.coinbase1)
-	coinbase.Write(extraNonce)
+	coinbase.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+	coinbase.Write(j.coinbase2)
+
+	var hasher = sha256d.New()
+	hasher.Write(coinbase.Bytes())
+	coinbaseHash := hasher.Sum(nil)
+	hasher.Reset()
+
+	buf := bytes.Buffer{}
+	buf.Write(j.version)
+	buf.Write(j.prevBlockHash)
+
+	// walk down the merkle branch to get merkle root
+	rootHash := coinbaseHash
+
+	for _, branch := range j.merkleBranch {
+		hasher.Write(rootHash)
+		hasher.Write(branch)
+		rootHash = hasher.Sum(nil)
+		hasher.Reset()
+	}
+
+	buf.Write(rootHash)
+	buf.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	buf.Write(solveData.nTime)
+	buf.Write(j.bits)
+	buf.Write(solveData.nonce1)
+	buf.Write(solveData.nonce2)
+	buf.Write(solveData.solution)
+
+	header := buf.Bytes()
+	headerHsh, err := service.AlgoConfig["sha256d"].PoWHash(header)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	hashObj, err := chainhash.NewHash(headerHsh)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	bigHsh := blockchain.HashToBig(hashObj)
+	// Share targets are in opposite endian of block targets (i think..), so
+	// the comparison direction is opposite as well. Here we check if hash >
+	// target, but below we check if hash < network_target
+	if shareTarget != nil && bigHsh.Cmp(shareTarget) >= 0 {
+		validShare = true
+	}
+
+	var currencies = []string{j.currencyConfig.Code}
+	if bigHsh.Cmp(j.target) <= 0 {
+		ret[j.currencyConfig.Code] = &BlockSolve{
+			data:           j.GetBlock(header, coinbase.Bytes()),
+			coinbaseHash:   coinbaseHash,
+			subsidyAddress: (*j.currencyConfig.BlockSubsidyAddress).String(),
+			powalgo:        j.algo.Name,
+			subsidy:        j.subsidy,
+			height:         j.height,
+			powhash:        bigHsh,
+			target:         j.target,
+		}
+	}
+
+	for _, mj := range j.auxChains {
+		currencies = append(currencies, mj.currencyConfig.Code)
+		if bigHsh.Cmp(mj.target) <= 0 {
+			ret[mj.currencyConfig.Code] = &BlockSolve{
+				data:           mj.GetBlock(coinbase.Bytes(), headerHsh, j.merkleBranch, header),
+				subsidy:        mj.subsidy,
+				height:         mj.height,
+				coinbaseHash:   mj.coinbaseHash,
+				subsidyAddress: (*mj.currencyConfig.BlockSubsidyAddress).String(),
+				powhash:        bigHsh,
+				target:         mj.target,
+			}
+		}
+	}
+	return ret, validShare, currencies, nil
+}
+
+type ExtranonceSolve struct {
+	nonce       []byte
+	nTime       []byte
+	extraNonce2 []byte
+	extraNonce1 []byte
+}
+
+func (m ExtranonceSolve) GetKey() string {
+	return string(m.extraNonce2) + string(m.extraNonce1) + string(m.nTime) + string(m.nonce)
+}
+
+func (j *Job) checkExtranonceSolve(solveData ExtranonceSolve, shareTarget *big.Int) (map[string]*BlockSolve, bool, []string, error) {
+	var ret = map[string]*BlockSolve{}
+	var validShare = false
+
+	coinbase := bytes.Buffer{}
+	coinbase.Write(j.coinbase1)
+	coinbase.Write(solveData.extraNonce1)
+	coinbase.Write(solveData.extraNonce2)
 	coinbase.Write(j.coinbase2)
 
 	var hasher = sha256d.New()
 	hasher.Write(coinbase.Bytes())
 	coinbaseHash := hasher.Sum(nil)
 
-	header := j.GetBlockHeader(nonce, coinbaseHash)
+	header := j.GetBlockHeader(solveData.nonce, coinbaseHash)
 	headerHsh, err := j.algo.PoWHash(header)
 	if err != nil {
 		return nil, false, nil, err
@@ -250,6 +392,16 @@ func (j *Job) CheckSolves(nonce []byte, extraNonce []byte, shareTarget *big.Int)
 		}
 	}
 	return ret, validShare, currencies, nil
+}
+
+func (j *Job) CheckSolves(solveData interface{}, shareTarget *big.Int) (map[string]*BlockSolve, bool, []string, error) {
+	switch v := solveData.(type) {
+	case ExtranonceSolve:
+		return j.checkExtranonceSolve(v, shareTarget)
+	case SolutionSolve:
+		return j.checkSolSolve(v, shareTarget)
+	}
+	return nil, false, nil, errors.New("Unrecognized solve data")
 }
 
 type MainChainJob struct {
